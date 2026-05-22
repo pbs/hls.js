@@ -280,10 +280,12 @@ class PassThroughRemuxer extends Logger implements Remuxer {
 
     let data1 = data;
     let data2: Uint8Array<ArrayBuffer> | undefined;
+    // I-Frame fragments need their sample duration stretched to EXTINF so
+    // MSE has a buffered slice wide enough to seek within between keyframes.
     if (
       __USE_IFRAMES__ &&
       videoSampleTimestamps &&
-      videoSampleTimestamps.sampleCount > 1 &&
+      videoSampleTimestamps.sampleCount >= 1 &&
       initData.video &&
       chunkMeta.iframe
     ) {

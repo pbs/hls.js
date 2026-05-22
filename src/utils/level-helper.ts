@@ -29,7 +29,11 @@ export function updatePTS(
   updateFromToPTS(fragFrom, fragTo);
 }
 
-function updateFromToPTS(fragFrom: MediaFragment, fragTo: MediaFragment) {
+function updateFromToPTS(
+  fragFrom: MediaFragment,
+  fragTo: MediaFragment,
+  iframesOnly?: boolean,
+) {
   const fragToPTS = fragTo.startPTS as number;
   // if we know startPTS[toIdx]
   if (Number.isFinite(fragToPTS)) {
@@ -44,14 +48,21 @@ function updateFromToPTS(fragFrom: MediaFragment, fragTo: MediaFragment) {
       duration = fragFrom.start - fragToPTS;
       frag = fragTo;
     }
-    if (frag.duration !== duration) {
+    // For #EXT-X-I-FRAMES-ONLY playlists EXTINF is the time until the next
+    // I-frame — the canonical fragment duration. Overwriting with PTS-measured
+    // duration (e.g. ~33ms) collapses frag.end so fragmentTracker can't find a
+    // tracked frag at any time between keyframes, and IFrameStreamController's
+    // seekTo() then silently fails on every loadMediaAt.
+    if (!iframesOnly && frag.duration !== duration) {
       frag.setDuration(duration);
     }
     // we dont know startPTS[toIdx]
   } else if (fragTo.sn > fragFrom.sn) {
     const contiguous = fragFrom.cc === fragTo.cc;
     // TODO: With part-loading end/durations we need to confirm the whole fragment is loaded before using (or setting) minEndPTS
-    if (contiguous && fragFrom.minEndPTS) {
+    if (!iframesOnly && contiguous && fragFrom.minEndPTS) {
+      // Same rationale as above: fragFrom.minEndPTS only spans the keyframe, so
+      // using it as the next fragment's start would collapse the timeline.
       fragTo.setStart(fragFrom.start + (fragFrom.minEndPTS - fragFrom.start));
     } else {
       fragTo.setStart(fragFrom.start + fragFrom.duration);
@@ -110,7 +121,10 @@ export function updateFragPTSDTS(
   if (frag.start !== 0) {
     frag.setStart(startPTS);
   }
-  frag.setDuration(endPTS - frag.start);
+  // See note in updateFromToPTS: keep EXTINF duration for iframe-only.
+  if (!iframesOnly) {
+    frag.setDuration(endPTS - frag.start);
+  }
   frag.startPTS = startPTS;
   frag.maxStartPTS = maxStartPTS;
   frag.startDTS = startDTS;
@@ -134,15 +148,19 @@ export function updateFragPTSDTS(
   fragments[fragIdx] = frag;
   // adjust fragment PTS/duration from seqnum-1 to frag 0
   for (i = fragIdx; i > 0; i--) {
-    updateFromToPTS(fragments[i], fragments[i - 1]);
+    updateFromToPTS(fragments[i], fragments[i - 1], iframesOnly);
   }
 
   // adjust fragment PTS/duration from seqnum to last frag
   for (i = fragIdx; i < fragments.length - 1; i++) {
-    updateFromToPTS(fragments[i], fragments[i + 1]);
+    updateFromToPTS(fragments[i], fragments[i + 1], iframesOnly);
   }
   if (details.fragmentHint) {
-    updateFromToPTS(fragments[fragments.length - 1], details.fragmentHint);
+    updateFromToPTS(
+      fragments[fragments.length - 1],
+      details.fragmentHint,
+      iframesOnly,
+    );
   }
 
   details.PTSKnown = details.alignedSliding = true;
@@ -200,7 +218,12 @@ export function mergeDetails(
         newFrag.endPTS = oldFrag.endPTS;
         newFrag.endDTS = oldFrag.endDTS;
         newFrag.minEndPTS = oldFrag.minEndPTS;
-        newFrag.setDuration(oldFrag.endPTS! - oldFrag.startPTS!);
+        // See note in updateFromToPTS: preserving EXTINF here is required so
+        // fragmentTracker's [start..start+duration] lookup still finds a frag
+        // for any time inside the EXTINF window.
+        if (!newDetails.iframesOnly) {
+          newFrag.setDuration(oldFrag.endPTS! - oldFrag.startPTS!);
+        }
 
         if (newFrag.duration) {
           PTSFrag = newFrag;
