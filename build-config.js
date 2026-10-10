@@ -64,6 +64,7 @@ const flags = {
   mediaCapabilities: readFeatureFlag('MEDIA_CAPABILITIES'),
   interstitials: readFeatureFlag('INTERSTITIALS'),
   iframes: readFeatureFlag('IFRAMES'),
+  playlistArchives: readFeatureFlag('PLAYLIST_ARCHIVES'),
 };
 
 function getFeatureSupport(type) {
@@ -78,6 +79,7 @@ function getFeatureSupport(type) {
     mediaCapabilities: isFeatureEnabled(type, flags.mediaCapabilities),
     interstitials: isFeatureEnabled(type, flags.interstitials),
     iframes: isFeatureEnabled(type, flags.iframes),
+    playlistArchives: isFeatureEnabled(type, flags.playlistArchives),
   };
 }
 
@@ -103,6 +105,7 @@ const buildConstants = (
     __USE_MEDIA_CAPABILITIES__: JSON.stringify(features.mediaCapabilities),
     __USE_INTERSTITIALS__: JSON.stringify(features.interstitials),
     __USE_IFRAMES__: JSON.stringify(features.iframes),
+    __USE_PLAYLIST_ARCHIVES__: JSON.stringify(features.playlistArchives),
 
     ...additional,
   },

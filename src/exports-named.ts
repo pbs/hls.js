@@ -56,6 +56,7 @@ export { DateRange } from './loader/date-range';
 export { LoadStats } from './loader/load-stats';
 export { LevelKey } from './loader/level-key';
 export { LevelDetails } from './loader/level-details';
+export { PlaylistArchive } from './loader/playlist-archive';
 export { MetadataSchema } from './types/demuxer';
 export { HlsSkip, HlsUrlParameters } from './types/level';
 export { LoaderContextType, PlaylistLevelType } from './types/loader';

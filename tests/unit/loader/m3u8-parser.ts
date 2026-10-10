@@ -3494,6 +3494,132 @@ fileSequence106.ts`;
       expect(details.fragments[4]?.sn).to.equal(106);
     });
   });
+
+  describe('EXT-X-ARCHIVE', function () {
+    const parse = (playlist: string) =>
+      M3U8Parser.parseLevelPlaylist(
+        playlist,
+        'http://example.com/live/index.m3u8',
+        0,
+        PlaylistLevelType.MAIN,
+        0,
+        null,
+      );
+
+    it('parses archive tags from the proposal example', function () {
+      const details = parse(`#EXTM3U
+#EXT-X-TARGETDURATION:5
+#EXT-X-VERSION:6
+#EXT-X-MEDIA-SEQUENCE:13
+#EXT-X-ARCHIVE:FIRST-MSN=1,DURATION=30.000,URI="archive1-6.m3u8a"
+#EXT-X-ARCHIVE:FIRST-MSN=7,DURATION=30.000,URI="archive7-12.m3u8a"
+#EXT-X-PROGRAM-DATE-TIME:2026-09-02T08:01:05.000Z
+#EXT-X-MAP:URI="fileSequence0.mp4"
+#EXTINF:5.00000,
+fileSequence13.m4s
+#EXTINF:5.00000,
+fileSequence14.m4s`);
+      expect(details.playlistParsingError).to.be.null;
+      expect(details.startSN).to.equal(13);
+      expect(details.fragments).to.have.lengthOf(2);
+      const archives = details.archives!;
+      expect(archives).to.have.lengthOf(2);
+      expect(archives[0].url).to.equal(
+        'http://example.com/live/archive1-6.m3u8a',
+      );
+      expect(archives[0].firstSN).to.equal(1);
+      expect(archives[0].duration).to.equal(30);
+      expect(archives[0].startDate).to.be.null;
+      expect(archives[0].details).to.be.null;
+      expect(archives[0].start).to.be.NaN;
+      expect(archives[1].url).to.equal(
+        'http://example.com/live/archive7-12.m3u8a',
+      );
+      expect(archives[1].firstSN).to.equal(7);
+    });
+
+    it('accepts any attribute order, integer durations and START-PROGRAM-DATE with or without quotes', function () {
+      const details = parse(`#EXTM3U
+#EXT-X-TARGETDURATION:4
+#EXT-X-ARCHIVE:URI="a/1.m3u8a",START-PROGRAM-DATE="2026-10-10T13:37:41.612Z",DURATION=184,FIRST-MSN=104
+#EXT-X-ARCHIVE:FIRST-MSN=150,DURATION=600.600,START-PROGRAM-DATE=2026-10-10T09:40:45.796-04:00,URI="a/2.m3u8a"
+#EXT-X-MEDIA-SEQUENCE:300
+#EXTINF:4.004,
+300.mp4`);
+      const archives = details.archives!;
+      expect(archives[0].url).to.equal('http://example.com/live/a/1.m3u8a');
+      expect(archives[0].duration).to.equal(184);
+      expect(archives[0].startDate!.getTime()).to.equal(
+        Date.UTC(2026, 9, 10, 13, 37, 41, 612),
+      );
+      expect(archives[1].firstSN).to.equal(150);
+      expect(archives[1].startDate!.getTime()).to.equal(
+        Date.UTC(2026, 9, 10, 13, 40, 45, 796),
+      );
+    });
+
+    it('ignores archive tags without URI, FIRST-MSN or a valid DURATION', function () {
+      const details = parse(`#EXTM3U
+#EXT-X-TARGETDURATION:5
+#EXT-X-MEDIA-SEQUENCE:13
+#EXT-X-ARCHIVE:FIRST-MSN=1,DURATION=30.000
+#EXT-X-ARCHIVE:DURATION=30.000,URI="b.m3u8a"
+#EXT-X-ARCHIVE:FIRST-MSN=7,DURATION=-1,URI="c.m3u8a"
+#EXT-X-ARCHIVE:FIRST-MSN=7,DURATION=30,URI="d.m3u8a"
+#EXTINF:5,
+13.m4s`);
+      expect(details.playlistParsingError).to.be.null;
+      expect(details.archives).to.have.lengthOf(1);
+      expect(details.archives![0].url).to.equal(
+        'http://example.com/live/d.m3u8a',
+      );
+    });
+
+    it('accepts archive tags between the first segment tags and its URI', function () {
+      const details = parse(`#EXTM3U
+#EXT-X-TARGETDURATION:5
+#EXT-X-MEDIA-SEQUENCE:13
+#EXT-X-PROGRAM-DATE-TIME:2026-09-02T08:01:05.000Z
+#EXT-X-MAP:URI="init.mp4"
+#EXT-X-ARCHIVE:FIRST-MSN=7,DURATION=30,URI="7.m3u8a"
+#EXTINF:5,
+13.m4s`);
+      expect(details.playlistParsingError).to.be.null;
+      expect(details.archives).to.have.lengthOf(1);
+      expect(details.fragments[0].initSegment?.relurl).to.equal('init.mp4');
+      expect(details.fragments[0].rawProgramDateTime).to.equal(
+        '2026-09-02T08:01:05.000Z',
+      );
+    });
+
+    it('#EXT-X-ARCHIVE must appear before the first Media Segment', function () {
+      const details = parse(`#EXTM3U
+#EXT-X-TARGETDURATION:5
+#EXT-X-MEDIA-SEQUENCE:13
+#EXTINF:5,
+13.m4s
+#EXT-X-ARCHIVE:FIRST-MSN=7,DURATION=30,URI="7.m3u8a"
+#EXTINF:5,
+14.m4s`);
+      expectPlaylistParsingError(
+        details,
+        '#EXT-X-ARCHIVE must appear before the first Media Segment (#EXT-X-ARCHIVE:FIRST-MSN=7,DURATION=30,URI="7.m3u8a")',
+      );
+    });
+
+    it('substitutes variables in archive URIs', function () {
+      const details = parse(`#EXTM3U
+#EXT-X-TARGETDURATION:5
+#EXT-X-DEFINE:NAME="path",VALUE="archives"
+#EXT-X-MEDIA-SEQUENCE:13
+#EXT-X-ARCHIVE:FIRST-MSN=7,DURATION=30,URI="{$path}/7.m3u8a"
+#EXTINF:5,
+13.m4s`);
+      expect(details.archives![0].url).to.equal(
+        'http://example.com/live/archives/7.m3u8a',
+      );
+    });
+  });
 });
 
 function expectWithJSONMessage(value: any, msg?: string) {

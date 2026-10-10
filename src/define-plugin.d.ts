@@ -11,6 +11,7 @@ declare const __USE_M2TS_ADVANCED_CODECS__: boolean;
 declare const __USE_MEDIA_CAPABILITIES__: boolean;
 declare const __USE_INTERSTITIALS__: boolean;
 declare const __USE_IFRAMES__: boolean;
+declare const __USE_PLAYLIST_ARCHIVES__: boolean;
 
 // __IN_WORKER__ is provided from a closure call around the final UMD bundle.
 declare const __IN_WORKER__: boolean;

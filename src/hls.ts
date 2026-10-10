@@ -1486,6 +1486,7 @@ export type { DecrypterAesMode } from './crypt/decrypter-aes-mode';
 export type { DateRange, DateRangeCue } from './loader/date-range';
 export type { LoadStats } from './loader/load-stats';
 export type { LevelKey } from './loader/level-key';
+export type { PlaylistArchive } from './loader/playlist-archive';
 export type {
   Base,
   BaseSegment,

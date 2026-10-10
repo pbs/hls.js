@@ -3,6 +3,7 @@ import { DateRange } from './date-range';
 import { Fragment, Part } from './fragment';
 import { LevelDetails } from './level-details';
 import { LevelKey } from './level-key';
+import { PlaylistArchive } from './playlist-archive';
 import { AttrList } from '../utils/attr-list';
 import { isCodecType } from '../utils/codecs';
 import { logger } from '../utils/logger';
@@ -64,7 +65,7 @@ const LEVEL_PLAYLIST_REGEX_FAST = new RegExp(
 
 const LEVEL_PLAYLIST_REGEX_SLOW = new RegExp(
   [
-    /#EXT-X-(PROGRAM-DATE-TIME|BYTERANGE|DATERANGE|DEFINE|KEY|MAP|PART|PART-INF|PLAYLIST-TYPE|PRELOAD-HINT|RENDITION-REPORT|SERVER-CONTROL|SKIP|START):(.+)/
+    /#EXT-X-(PROGRAM-DATE-TIME|BYTERANGE|ARCHIVE|DATERANGE|DEFINE|KEY|MAP|PART|PART-INF|PLAYLIST-TYPE|PRELOAD-HINT|RENDITION-REPORT|SERVER-CONTROL|SKIP|START):(.+)/
       .source,
     /#EXT-X-(BITRATE|DISCONTINUITY-SEQUENCE|MEDIA-SEQUENCE|TARGETDURATION|VERSION): *(\d+)/
       .source,
@@ -583,6 +584,23 @@ export default class M3U8Parser {
             }
             // Add to fragment tag list for backwards compatibility (< v1.2.0)
             frag.tagList.push(['EXT-X-DATERANGE', value1]);
+            break;
+          }
+          case 'ARCHIVE': {
+            if (__USE_PLAYLIST_ARCHIVES__) {
+              const archiveAttrs = new AttrList(value1, level);
+              const archive = new PlaylistArchive(
+                archiveAttrs,
+                M3U8Parser.resolve(archiveAttrs.URI || '', baseurl),
+              );
+              if (!archive.isValid) {
+                logger.log(`Ignoring invalid ARCHIVE tag: ${value1}`);
+              } else if (prevFrag !== null) {
+                assignMustAppearBeforeSegmentsError(level, tag, result);
+              } else {
+                (level.archives || (level.archives = [])).push(archive);
+              }
+            }
             break;
           }
           case 'DEFINE': {

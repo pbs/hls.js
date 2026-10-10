@@ -205,7 +205,7 @@ npm run size
 npm run size:check
 ```
 
-**NOTE:** `hls.light.*.js` dist files do not include alternate-audio, subtitles, CMCD, EME (DRM), Variable Substitution, Interstitials, I-frame trick-play, Media Capabilities, or MPEG-2 TS advanced codec (HEVC and AC-3) support. Content Steering is included. In addition, the following types are not available in the light build:
+**NOTE:** `hls.light.*.js` dist files do not include alternate-audio, subtitles, CMCD, EME (DRM), Variable Substitution, Interstitials, I-frame trick-play, Playlist Archives, Media Capabilities, or MPEG-2 TS advanced codec (HEVC and AC-3) support. Content Steering is included. In addition, the following types are not available in the light build:
 
 - `AudioStreamController`
 - `AudioTrackController`

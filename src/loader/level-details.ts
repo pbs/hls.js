@@ -1,6 +1,7 @@
 import type { DateRange } from './date-range';
 import type { Fragment, MediaFragment, Part } from './fragment';
 import type { LevelKey } from './level-key';
+import type { PlaylistArchive } from './playlist-archive';
 import type { VariableMap } from '../types/level';
 import type { AttrList } from '../utils/attr-list';
 import type { KeySystemFormats } from '../utils/mediakeys-helper';
@@ -19,6 +20,7 @@ export class LevelDetails {
   public fragments: MediaFragment[];
   public fragmentHint?: MediaFragment;
   public partList: Part[] | null = null;
+  public archives: PlaylistArchive[] | null = null;
   public dateRanges: Record<string, DateRange | undefined>;
   public dateRangeTagCount: number = 0;
   public live: boolean = true;

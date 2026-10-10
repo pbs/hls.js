@@ -3562,6 +3562,8 @@ export class LevelDetails {
     // (undocumented)
     appliedTimelineOffset?: number;
     // (undocumented)
+    archives: PlaylistArchive[] | null;
+    // (undocumented)
     averagetargetduration?: number;
     // (undocumented)
     canBlockReload: boolean;
@@ -4684,6 +4686,33 @@ export type PlayheadTimes = {
     duration: number;
     seekableStart: number;
 };
+
+// Warning: (ae-missing-release-tag) "PlaylistArchive" is part of the package's API, but it is missing a release tag (@alpha, @beta, @public, or @internal)
+//
+// @public (undocumented)
+export class PlaylistArchive {
+    constructor(attr: AttrList, url: string);
+    // (undocumented)
+    attr: AttrList;
+    // (undocumented)
+    details: LevelDetails | null;
+    // (undocumented)
+    get duration(): number;
+    // (undocumented)
+    error: Error | null;
+    // (undocumented)
+    get firstSN(): number;
+    // (undocumented)
+    get isValid(): boolean;
+    // (undocumented)
+    loader: Loader<PlaylistLoaderContext> | null;
+    // (undocumented)
+    start: number;
+    // (undocumented)
+    get startDate(): Date | null;
+    // (undocumented)
+    url: string;
+}
 
 // Warning: (ae-missing-release-tag) "PlaylistContextType" is part of the package's API, but it is missing a release tag (@alpha, @beta, @public, or @internal)
 //
