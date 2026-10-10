@@ -17,6 +17,7 @@ export enum LoaderContextType {
   STEERING_MANIFEST = 'steering-manifest',
   SERVER_CERTIFICATE = 'server-certificate',
   INTERSTITIAL_ASSET_LIST = 'interstitial-asset-list',
+  ARCHIVE = 'archive',
 }
 
 export interface LoaderContext {
@@ -186,7 +187,8 @@ export type PlaylistContextType =
   | LoaderContextType.MANIFEST
   | LoaderContextType.LEVEL
   | LoaderContextType.AUDIO_TRACK
-  | LoaderContextType.SUBTITLE_TRACK;
+  | LoaderContextType.SUBTITLE_TRACK
+  | LoaderContextType.ARCHIVE;
 
 export enum PlaylistLevelType {
   MAIN = 'main',

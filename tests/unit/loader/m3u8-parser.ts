@@ -3619,6 +3619,214 @@ fileSequence14.m4s`);
         'http://example.com/live/archives/7.m3u8a',
       );
     });
+
+    describe('archive mode', function () {
+      const parent = parse(`#EXTM3U
+#EXT-X-TARGETDURATION:5
+#EXT-X-DEFINE:NAME="v",VALUE="variant"
+#EXT-X-MEDIA-SEQUENCE:13
+#EXT-X-ARCHIVE:FIRST-MSN=1,DURATION=30.000,URI="archive1-6.m3u8a"
+#EXTINF:5,
+13.m4s`);
+      const parseArchive = (
+        archive: string,
+        url: string = 'http://example.com/live/archive1-6.m3u8a',
+        parentDetails = parent,
+      ) =>
+        M3U8Parser.parseLevelPlaylist(
+          archive,
+          url,
+          0,
+          PlaylistLevelType.MAIN,
+          0,
+          null,
+          parentDetails,
+        );
+
+      it('parses the proposal example archive without #EXTM3U', function () {
+        const details = parseArchive(`#EXT-X-MEDIA-SEQUENCE:1
+#EXT-X-DISCONTINUITY-SEQUENCE:0
+#EXT-X-PROGRAM-DATE-TIME:2026-09-02T08:00:00.000Z
+#EXT-X-MAP:URI="fileSequence0.mp4"
+#EXTINF:5.00000,
+fileSequence1.m4s
+#EXTINF:5.00000,
+fileSequence2.m4s
+#EXTINF:5.00000,
+fileSequence3.m4s
+#EXTINF:5.00000,
+fileSequence4.m4s
+#EXTINF:5.00000,
+fileSequence5.m4s
+#EXTINF:5.00000,
+fileSequence6.m4s`);
+        expect(details.playlistParsingError).to.be.null;
+        expect(details.live).to.be.false;
+        expect(details.targetduration).to.equal(5);
+        expect(details.startSN).to.equal(1);
+        expect(details.endSN).to.equal(6);
+        expect(details.startCC).to.equal(0);
+        expect(details.totalduration).to.equal(30);
+        expect(details.fragments).to.have.lengthOf(6);
+        expect(details.fragments[0].url).to.equal(
+          'http://example.com/live/fileSequence1.m4s',
+        );
+        expect(details.fragments[0].initSegment?.url).to.equal(
+          'http://example.com/live/fileSequence0.mp4',
+        );
+        expect(details.fragments[5].programDateTime).to.equal(
+          Date.UTC(2026, 8, 2, 8, 0, 25),
+        );
+        expect(details.fragments[5].endList).to.be.undefined;
+      });
+
+      it('accepts #EXTM3U and redundant header tags and keeps the parent target duration', function () {
+        const details = parseArchive(`#EXTM3U
+#EXT-X-VERSION:6
+#EXT-X-TARGETDURATION:6
+#EXT-X-INDEPENDENT-SEGMENTS
+#EXT-X-MEDIA-SEQUENCE:7
+#EXT-X-DISCONTINUITY-SEQUENCE:2
+#EXTINF:5,
+7.m4s`);
+        expect(details.playlistParsingError).to.be.null;
+        expect(details.targetduration).to.equal(5);
+        expect(details.startSN).to.equal(7);
+        expect(details.fragments[0].cc).to.equal(2);
+      });
+
+      it('requires EXT-X-MEDIA-SEQUENCE and EXT-X-DISCONTINUITY-SEQUENCE', function () {
+        const message =
+          'Missing Playlist Archive EXT-X-MEDIA-SEQUENCE or EXT-X-DISCONTINUITY-SEQUENCE';
+        expectPlaylistParsingError(
+          parseArchive(`#EXT-X-MEDIA-SEQUENCE:7
+#EXTINF:5,
+7.m4s`),
+          message,
+        );
+        expectPlaylistParsingError(
+          parseArchive(`#EXT-X-DISCONTINUITY-SEQUENCE:0
+#EXTINF:5,
+7.m4s`),
+          message,
+        );
+        expectPlaylistParsingError(
+          parseArchive(`<html><body>Not Found</body></html>`),
+          message,
+        );
+      });
+
+      it('accepts an archive with no segments', function () {
+        const details = parseArchive(`#EXT-X-MEDIA-SEQUENCE:7
+#EXT-X-DISCONTINUITY-SEQUENCE:0`);
+        expect(details.playlistParsingError).to.be.null;
+        expect(details.fragments).to.have.lengthOf(0);
+      });
+
+      it('ignores playlist-scoped tags and keeps other segment tags', function () {
+        const details = parseArchive(`#EXT-X-MEDIA-SEQUENCE:7
+#EXT-X-DISCONTINUITY-SEQUENCE:0
+#EXT-X-DEFINE:NAME="v",VALUE="archive"
+#EXT-X-SERVER-CONTROL:CAN-SKIP-UNTIL=24
+#EXT-X-PART-INF:PART-TARGET=1
+#EXT-X-ARCHIVE:FIRST-MSN=1,DURATION=30,URI="nested.m3u8a"
+#EXT-X-PROGRAM-DATE-TIME:2026-09-02T08:00:30.000Z
+#EXT-X-DATERANGE:ID="ad",START-DATE="2026-09-02T08:00:30.000Z"
+#EXT-X-CUE-OUT:DURATION=10
+#EXTINF:5,
+{$v}/7.m4s
+#EXT-X-CUE-OUT-CONT:ElapsedTime=5,Duration=10
+#EXT-X-PART:DURATION=1,URI="8.0.m4s"
+#EXTINF:5,
+8.m4s
+#EXT-X-SKIP:SKIPPED-SEGMENTS=1
+#EXT-X-PRELOAD-HINT:TYPE=PART,URI="9.0.m4s"
+#EXT-X-RENDITION-REPORT:URI="other.m3u8",LAST-MSN=9
+#EXT-X-ENDLIST`);
+        expect(details.playlistParsingError).to.be.null;
+        expect(details.fragments).to.have.lengthOf(2);
+        expect(details.fragments[0].url).to.equal(
+          'http://example.com/live/variant/7.m4s',
+        );
+        expect(details.fragments[0].tagList).to.deep.include([
+          'EXT-X-CUE-OUT',
+          'DURATION=10',
+        ]);
+        expect(details.fragments[1].tagList).to.deep.include([
+          'EXT-X-CUE-OUT-CONT',
+          'ElapsedTime=5,Duration=10',
+        ]);
+        expect(details.archives).to.be.null;
+        expect(details.dateRangeTagCount).to.equal(0);
+        expect(details.partList).to.be.null;
+        expect(details.fragmentHint).to.be.undefined;
+        expect(details.skippedSegments).to.equal(0);
+        expect(details.canSkipUntil).to.equal(0);
+        expect(details.live).to.be.false;
+      });
+
+      it('inherits I-frames-only from the parent', function () {
+        const iframes = parse(`#EXTM3U
+#EXT-X-TARGETDURATION:4
+#EXT-X-I-FRAMES-ONLY
+#EXT-X-MEDIA-SEQUENCE:13
+#EXT-X-MAP:URI="init.mp4"
+#EXTINF:4,
+#EXT-X-BYTERANGE:1000@2000
+13.mp4`);
+        const details = parseArchive(
+          `#EXT-X-MEDIA-SEQUENCE:7
+#EXT-X-DISCONTINUITY-SEQUENCE:0
+#EXT-X-MAP:URI="init.mp4"
+#EXTINF:4,
+#EXT-X-BYTERANGE:1000@5000
+7.mp4`,
+          'http://example.com/live/iframes7.m3u8a',
+          iframes,
+        );
+        expect(details.iframesOnly).to.be.true;
+        expect(details.fragments[0].byteRange).to.deep.equal([5000, 6000]);
+      });
+
+      it('resolves segment URIs against the archive URL', function () {
+        const details = parseArchive(
+          `#EXT-X-MEDIA-SEQUENCE:7
+#EXT-X-DISCONTINUITY-SEQUENCE:0
+#EXTINF:5,
+../media/7.m4s`,
+          'http://example.com/live/archives/7-12.m3u8a',
+        );
+        expect(details.fragments[0].url).to.equal(
+          'http://example.com/live/media/7.m4s',
+        );
+      });
+
+      it('derives AES-128 IVs from the Media Sequence Number', function () {
+        const details = parseArchive(`#EXT-X-MEDIA-SEQUENCE:258
+#EXT-X-DISCONTINUITY-SEQUENCE:0
+#EXT-X-KEY:METHOD=AES-128,URI="k.key"
+#EXTINF:5,
+258.ts`);
+        const ivExpected = new Uint8Array(16);
+        ivExpected[14] = 0x01;
+        ivExpected[15] = 0x02;
+        expect(details.fragments[0].decryptdata?.iv).to.deep.equal(ivExpected);
+      });
+
+      it('counts a leading EXT-X-DISCONTINUITY on top of the DISCONTINUITY-SEQUENCE', function () {
+        const details = parseArchive(`#EXT-X-MEDIA-SEQUENCE:7
+#EXT-X-DISCONTINUITY-SEQUENCE:3
+#EXT-X-DISCONTINUITY
+#EXTINF:5,
+7.m4s
+#EXTINF:5,
+8.m4s
+#EXT-X-DISCONTINUITY`);
+        expect(details.fragments).to.have.lengthOf(2);
+        expect(details.fragments[0].cc).to.equal(4);
+        expect(details.fragments[1].cc).to.equal(4);
+      });
+    });
   });
 });
 

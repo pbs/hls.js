@@ -82,6 +82,38 @@ export type ABRControllerConfig = {
     maxLoadingDelay: number;
 };
 
+// Warning: (ae-missing-release-tag) "ArchiveLoadedData" is part of the package's API, but it is missing a release tag (@alpha, @beta, @public, or @internal)
+//
+// @public (undocumented)
+export interface ArchiveLoadedData {
+    // (undocumented)
+    archive: PlaylistArchive;
+    // (undocumented)
+    details: LevelDetails;
+    // (undocumented)
+    level: number;
+    // (undocumented)
+    networkDetails: NullableNetworkDetails;
+    // (undocumented)
+    stats: LoaderStats;
+    // (undocumented)
+    type: PlaylistLevelType;
+}
+
+// Warning: (ae-missing-release-tag) "ArchiveLoadingData" is part of the package's API, but it is missing a release tag (@alpha, @beta, @public, or @internal)
+//
+// @public (undocumented)
+export interface ArchiveLoadingData {
+    // (undocumented)
+    archive: PlaylistArchive;
+    // (undocumented)
+    level: number;
+    // (undocumented)
+    levelDetails: LevelDetails;
+    // (undocumented)
+    type: PlaylistLevelType;
+}
+
 // Warning: (ae-missing-release-tag) "AssetListJSON" is part of the package's API, but it is missing a release tag (@alpha, @beta, @public, or @internal)
 //
 // @public (undocumented)
@@ -1394,6 +1426,8 @@ export interface ErrorData {
     // (undocumented)
     appendsWithoutProgress?: number;
     // (undocumented)
+    archive?: PlaylistArchive;
+    // (undocumented)
     buffer?: number;
     // (undocumented)
     bufferInfo?: BufferInfo;
@@ -1459,6 +1493,12 @@ export interface ErrorData {
 //
 // @public (undocumented)
 export enum ErrorDetails {
+    // (undocumented)
+    ARCHIVE_LOAD_ERROR = "archiveLoadError",
+    // (undocumented)
+    ARCHIVE_LOAD_TIMEOUT = "archiveLoadTimeout",
+    // (undocumented)
+    ARCHIVE_PARSING_ERROR = "archiveParsingError",
     // (undocumented)
     ASSET_LIST_LOAD_ERROR = "assetListLoadError",
     // (undocumented)
@@ -1587,6 +1627,10 @@ export enum ErrorTypes {
 //
 // @public (undocumented)
 export enum Events {
+    // (undocumented)
+    ARCHIVE_LOADED = "hlsArchiveLoaded",
+    // (undocumented)
+    ARCHIVE_LOADING = "hlsArchiveLoading",
     // (undocumented)
     ASSET_LIST_LOADED = "hlsAssetListLoaded",
     // (undocumented)
@@ -2581,6 +2625,10 @@ export interface HlsImageIFramesOnly extends Omit<HlsIFramesOnly, 'attachMedia' 
 //
 // @public
 export interface HlsListeners {
+    // (undocumented)
+    [Events.ARCHIVE_LOADED]: (event: Events.ARCHIVE_LOADED, data: ArchiveLoadedData) => void;
+    // (undocumented)
+    [Events.ARCHIVE_LOADING]: (event: Events.ARCHIVE_LOADING, data: ArchiveLoadingData) => void;
     // (undocumented)
     [Events.ASSET_LIST_LOADED]: (event: Events.ASSET_LIST_LOADED, data: AssetListLoadedData) => void;
     // (undocumented)
@@ -4006,6 +4054,8 @@ export interface LoaderContext {
 // @public (undocumented)
 export enum LoaderContextType {
     // (undocumented)
+    ARCHIVE = "archive",
+    // (undocumented)
     AUDIO_TRACK = "audioTrack",
     // (undocumented)
     INTERSTITIAL_ASSET_LIST = "interstitial-asset-list",
@@ -4178,7 +4228,7 @@ export class M3U8Parser {
     // (undocumented)
     static isMediaPlaylist(str: string): boolean;
     // (undocumented)
-    static parseLevelPlaylist(string: string, baseurl: string, id: number, type: PlaylistLevelType, levelUrlId: number, multivariantVariableList: VariableMap | null): LevelDetails;
+    static parseLevelPlaylist(string: string, baseurl: string, id: number, type: PlaylistLevelType, levelUrlId: number, multivariantVariableList: VariableMap | null, parent?: LevelDetails): LevelDetails;
     // (undocumented)
     static parseMasterPlaylist(string: string, baseurl: string): ParsedMultivariantPlaylist;
     // (undocumented)
@@ -4717,7 +4767,7 @@ export class PlaylistArchive {
 // Warning: (ae-missing-release-tag) "PlaylistContextType" is part of the package's API, but it is missing a release tag (@alpha, @beta, @public, or @internal)
 //
 // @public (undocumented)
-export type PlaylistContextType = LoaderContextType.MANIFEST | LoaderContextType.LEVEL | LoaderContextType.AUDIO_TRACK | LoaderContextType.SUBTITLE_TRACK;
+export type PlaylistContextType = LoaderContextType.MANIFEST | LoaderContextType.LEVEL | LoaderContextType.AUDIO_TRACK | LoaderContextType.SUBTITLE_TRACK | LoaderContextType.ARCHIVE;
 
 // Warning: (ae-missing-release-tag) "PlaylistControllerConfig" is part of the package's API, but it is missing a release tag (@alpha, @beta, @public, or @internal)
 //

@@ -47,6 +47,7 @@ import type { KeyLoaderInfo } from '../loader/key-loader';
 import type { LevelDetails } from '../loader/level-details';
 import type { LevelKey } from '../loader/level-key';
 import type { LoadStats } from '../loader/load-stats';
+import type { PlaylistArchive } from '../loader/playlist-archive';
 import type { AttrList } from '../utils/attr-list';
 import type { BufferInfo } from '../utils/buffer-helper';
 import type { TimestampOffset } from '../utils/timescale-conversion';
@@ -234,6 +235,22 @@ export interface LevelLoadedData {
   context?: PlaylistLoaderContext;
 }
 
+export interface ArchiveLoadingData {
+  archive: PlaylistArchive;
+  levelDetails: LevelDetails;
+  type: PlaylistLevelType;
+  level: number;
+}
+
+export interface ArchiveLoadedData {
+  archive: PlaylistArchive;
+  details: LevelDetails;
+  type: PlaylistLevelType;
+  level: number;
+  stats: LoaderStats;
+  networkDetails: NullableNetworkDetails;
+}
+
 export interface LevelUpdatedData {
   details: LevelDetails;
   level: number;
@@ -350,6 +367,7 @@ export interface ErrorData {
   parent?: PlaylistLevelType;
   sourceBufferName?: SourceBufferName;
   interstitial?: InterstitialEvent;
+  archive?: PlaylistArchive;
   /**
    * @deprecated Use ErrorData.error
    */

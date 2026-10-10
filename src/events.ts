@@ -1,4 +1,6 @@
 import type {
+  ArchiveLoadedData,
+  ArchiveLoadingData,
   AssetListLoadedData,
   AssetListLoadingData,
   AudioTrackLoadedData,
@@ -116,6 +118,10 @@ export enum Events {
   LEVEL_UPDATED = 'hlsLevelUpdated',
   // fired when a level's PTS information has been updated after parsing a fragment - data: { details : levelDetails object, level : id of updated level, drift: PTS drift observed when parsing last fragment }
   LEVEL_PTS_UPDATED = 'hlsLevelPtsUpdated',
+  // fired when a Playlist Archive starts loading - data: { archive, parent : details of the Media Playlist listing it, type, level : level or track id }
+  ARCHIVE_LOADING = 'hlsArchiveLoading',
+  // fired when a Playlist Archive has loaded - data: { archive, details : archive levelDetails, type, level, stats, networkDetails }
+  ARCHIVE_LOADED = 'hlsArchiveLoaded',
   // fired to notify that levels have changed after removing a level - data: { levels : [available quality levels] }
   LEVELS_UPDATED = 'hlsLevelsUpdated',
   // fired to notify that audio track lists has been updated - data: { audioTracks : audioTracks }
@@ -301,6 +307,14 @@ export interface HlsListeners {
   [Events.LEVEL_LOADED]: (
     event: Events.LEVEL_LOADED,
     data: LevelLoadedData,
+  ) => void;
+  [Events.ARCHIVE_LOADING]: (
+    event: Events.ARCHIVE_LOADING,
+    data: ArchiveLoadingData,
+  ) => void;
+  [Events.ARCHIVE_LOADED]: (
+    event: Events.ARCHIVE_LOADED,
+    data: ArchiveLoadedData,
   ) => void;
   [Events.LEVEL_UPDATED]: (
     event: Events.LEVEL_UPDATED,

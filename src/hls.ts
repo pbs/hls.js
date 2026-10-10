@@ -1544,6 +1544,8 @@ export type {
 export type {
   TrackLoadingData,
   TrackLoadedData,
+  ArchiveLoadedData,
+  ArchiveLoadingData,
   AssetListLoadedData,
   AssetListLoadingData,
   AudioTrackLoadedData,

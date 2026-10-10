@@ -21,6 +21,7 @@ import type { LoaderConfig, RetryConfig } from '../config';
 import type Hls from '../hls';
 import type { NetworkComponentAPI } from '../types/component-api';
 import type {
+  ArchiveLoadingData,
   ErrorData,
   LevelLoadingData,
   LevelsUpdatedData,
@@ -54,6 +55,18 @@ function mapContextToLevelType(
     default:
       return PlaylistLevelType.MAIN;
   }
+}
+
+function getLoaderConfig(loadPolicy: LoaderConfig): LoaderConfiguration {
+  const legacyRetryCompatibility: RetryConfig | Record<string, void> =
+    loadPolicy.errorRetry || loadPolicy.timeoutRetry || {};
+  return {
+    loadPolicy,
+    timeout: loadPolicy.maxLoadTimeMs,
+    maxRetry: legacyRetryCompatibility.maxNumRetry || 0,
+    retryDelay: legacyRetryCompatibility.retryDelayMs || 0,
+    maxRetryDelay: legacyRetryCompatibility.maxRetryDelayMs || 0,
+  };
 }
 
 function getResponseUrl(
@@ -96,6 +109,9 @@ class PlaylistLoader implements NetworkComponentAPI {
     hls.on(Events.AUDIO_TRACK_LOADING, this.onAudioTrackLoading, this);
     hls.on(Events.SUBTITLE_TRACK_LOADING, this.onSubtitleTrackLoading, this);
     hls.on(Events.LEVELS_UPDATED, this.onLevelsUpdated, this);
+    if (__USE_PLAYLIST_ARCHIVES__) {
+      hls.on(Events.ARCHIVE_LOADING, this.onArchiveLoading, this);
+    }
   }
 
   private unregisterListeners() {
@@ -105,6 +121,9 @@ class PlaylistLoader implements NetworkComponentAPI {
     hls.off(Events.AUDIO_TRACK_LOADING, this.onAudioTrackLoading, this);
     hls.off(Events.SUBTITLE_TRACK_LOADING, this.onSubtitleTrackLoading, this);
     hls.off(Events.LEVELS_UPDATED, this.onLevelsUpdated, this);
+    if (__USE_PLAYLIST_ARCHIVES__) {
+      hls.off(Events.ARCHIVE_LOADING, this.onArchiveLoading, this);
+    }
   }
 
   /**
@@ -323,16 +342,7 @@ class PlaylistLoader implements NetworkComponentAPI {
       }
     }
 
-    const legacyRetryCompatibility: RetryConfig | Record<string, void> =
-      loadPolicy.errorRetry || loadPolicy.timeoutRetry || {};
-    const loaderConfig: LoaderConfiguration = {
-      loadPolicy,
-      timeout: loadPolicy.maxLoadTimeMs,
-      maxRetry: legacyRetryCompatibility.maxNumRetry || 0,
-      retryDelay: legacyRetryCompatibility.retryDelayMs || 0,
-      maxRetryDelay: legacyRetryCompatibility.maxRetryDelayMs || 0,
-    };
-
+    const loaderConfig = getLoaderConfig(loadPolicy);
     const loaderCallbacks: LoaderCallbacks<PlaylistLoaderContext> = {
       onSuccess: (response, stats, context, networkDetails) => {
         const loader = this.getInternalLoader(context) as
@@ -381,6 +391,113 @@ class PlaylistLoader implements NetworkComponentAPI {
     // logger.debug(`[playlist-loader]: Calling internal loader delegate for URL: ${context.url}`);
 
     loader.load(context, loaderConfig, loaderCallbacks);
+  }
+
+  private onArchiveLoading(
+    event: Events.ARCHIVE_LOADING,
+    data: ArchiveLoadingData,
+  ) {
+    const { archive, levelDetails, type, level } = data;
+    const config = this.hls.config;
+    const PLoader = config.pLoader || config.loader;
+    const loader = new PLoader(config) as Loader<PlaylistLoaderContext>;
+    const context: PlaylistLoaderContext = {
+      type: LoaderContextType.ARCHIVE,
+      url: archive.url,
+      responseType: 'text',
+      level,
+      id: level,
+      levelDetails,
+      deliveryDirectives: null,
+      levelOrTrack: null,
+    };
+    archive.loader = loader;
+    archive.error = null;
+    loader.load(context, getLoaderConfig(config.playlistLoadPolicy.default), {
+      onSuccess: (response, stats, context, networkDetails) => {
+        archive.loader = null;
+        stats.parsing.start = performance.now();
+        const details = M3U8Parser.parseLevelPlaylist(
+          response.data as string,
+          getResponseUrl(response, context),
+          level,
+          type,
+          0,
+          this.variableList,
+          levelDetails,
+        );
+        stats.parsing.end = performance.now();
+        if (details.playlistParsingError) {
+          this.handleArchiveError(
+            data,
+            ErrorDetails.ARCHIVE_PARSING_ERROR,
+            details.playlistParsingError,
+            networkDetails,
+            stats,
+          );
+          return;
+        }
+        this.hls.trigger(Events.ARCHIVE_LOADED, {
+          archive,
+          details,
+          type,
+          level,
+          stats,
+          networkDetails,
+        });
+      },
+      onError: (response, context, networkDetails, stats) => {
+        this.handleArchiveError(
+          data,
+          ErrorDetails.ARCHIVE_LOAD_ERROR,
+          new Error(
+            `HTTP Error ${response.code} ${response.text} (${context.url})`,
+          ),
+          networkDetails,
+          stats,
+          response,
+        );
+      },
+      onTimeout: (stats, context, networkDetails) => {
+        this.handleArchiveError(
+          data,
+          ErrorDetails.ARCHIVE_LOAD_TIMEOUT,
+          new Error(`Timeout loading Playlist Archive (${context.url})`),
+          networkDetails,
+          stats,
+        );
+      },
+    });
+  }
+
+  private handleArchiveError(
+    data: ArchiveLoadingData,
+    details: ErrorDetails,
+    error: Error,
+    networkDetails: NullableNetworkDetails,
+    stats: LoaderStats,
+    response?: { code: number; text: string },
+  ) {
+    const { archive } = data;
+    archive.loader = null;
+    archive.error = error;
+    this.hls.trigger(Events.ERROR, {
+      type: ErrorTypes.NETWORK_ERROR,
+      details,
+      fatal: false,
+      url: archive.url,
+      archive,
+      parent: data.type,
+      error,
+      reason: error.message,
+      response: response && {
+        url: archive.url,
+        data: undefined as any,
+        ...response,
+      },
+      networkDetails,
+      stats,
+    });
   }
 
   private checkAutostartLoad() {

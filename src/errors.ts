@@ -88,6 +88,12 @@ export enum ErrorDetails {
   BUFFER_SEEK_OVER_HOLE = 'bufferSeekOverHole',
   // Identifier for a buffer nudge on stall (playback is stuck although currentTime is in a buffered area)
   BUFFER_NUDGE_ON_STALL = 'bufferNudgeOnStall',
+  // Identifier for a Playlist Archive load error - data: { url : faulty URL, archive, response : { code: error code, text: error text } }
+  ARCHIVE_LOAD_ERROR = 'archiveLoadError',
+  // Identifier for a Playlist Archive load timeout - data: { url : faulty URL, archive }
+  ARCHIVE_LOAD_TIMEOUT = 'archiveLoadTimeout',
+  // Identifier for a Playlist Archive parsing error - data: { url : faulty URL, archive, error }
+  ARCHIVE_PARSING_ERROR = 'archiveParsingError',
   // Identifier for a Interstitial Asset List load error - data: { url: faulty URL, response: { code: error code, text: error text } }
   ASSET_LIST_LOAD_ERROR = 'assetListLoadError',
   // Identifier for a Interstitial Asset List load timeout - data: { url: faulty URL, response: { code: error code, text: error text } }

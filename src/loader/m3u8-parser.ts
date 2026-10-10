@@ -63,6 +63,10 @@ const LEVEL_PLAYLIST_REGEX_FAST = new RegExp(
   'g',
 );
 
+// Playlist-scoped tags that do not apply to Playlist Archives
+const ARCHIVE_IGNORED_TAGS =
+  /^(?:ARCHIVE|DATERANGE|DEFINE|ENDLIST|PART|PART-INF|PRELOAD-HINT|RENDITION-REPORT|SERVER-CONTROL|SKIP|TARGETDURATION)$/;
+
 const LEVEL_PLAYLIST_REGEX_SLOW = new RegExp(
   [
     /#EXT-X-(PROGRAM-DATE-TIME|BYTERANGE|ARCHIVE|DATERANGE|DEFINE|KEY|MAP|PART|PART-INF|PLAYLIST-TYPE|PRELOAD-HINT|RENDITION-REPORT|SERVER-CONTROL|SKIP|START):(.+)/
@@ -322,9 +326,17 @@ export default class M3U8Parser {
     type: PlaylistLevelType,
     levelUrlId: number,
     multivariantVariableList: VariableMap | null,
+    parent?: LevelDetails,
   ): LevelDetails {
     const base = { url: baseurl };
     const level = new LevelDetails(baseurl);
+    let sequenceTagCount = 0;
+    if (parent) {
+      level.live = false;
+      level.targetduration = parent.targetduration;
+      level.iframesOnly = parent.iframesOnly;
+      level.variableList = parent.variableList;
+    }
     const fragments: M3U8ParserFragments = level.fragments;
     const programDateTimes: MediaFragment[] = [];
     // The most recent init segment seen (applies to all subsequent segments)
@@ -350,10 +362,13 @@ export default class M3U8Parser {
       ? hasVariableReferences(string)
       : false;
     if (LEVEL_PLAYLIST_REGEX_FAST.exec(string)?.[0] !== '#EXTM3U') {
-      level.playlistParsingError = new Error(
-        'Missing format identifier #EXTM3U',
-      );
-      return level;
+      if (!parent) {
+        level.playlistParsingError = new Error(
+          'Missing format identifier #EXTM3U',
+        );
+        return level;
+      }
+      LEVEL_PLAYLIST_REGEX_FAST.lastIndex = 0;
     }
     while ((result = LEVEL_PLAYLIST_REGEX_FAST.exec(string)) !== null) {
       if (createNextFrag) {
@@ -462,6 +477,9 @@ export default class M3U8Parser {
         const tag = (' ' + result[i]).slice(1);
         const value1 = (' ' + result[i + 1]).slice(1);
         const value2 = result[i + 2] ? (' ' + result[i + 2]).slice(1) : null;
+        if (parent && ARCHIVE_IGNORED_TAGS.test(tag)) {
+          continue;
+        }
 
         switch (tag) {
           case 'BYTERANGE':
@@ -493,6 +511,7 @@ export default class M3U8Parser {
               assignMustAppearBeforeSegmentsError(level, tag, result);
             }
             level.startSN = parseInt(value1);
+            sequenceTagCount++;
             // include skipped segments so the first real fragment keeps its sequence
             // number when EXT-X-SKIP is declared before EXT-X-MEDIA-SEQUENCE
             currentSN = level.startSN + level.skippedSegments;
@@ -624,6 +643,7 @@ export default class M3U8Parser {
               assignMultipleMediaPlaylistTagOccuranceError(level, tag, result);
             }
             level.startCC = discontinuityCounter = parseInt(value1);
+            sequenceTagCount++;
             fragments.forEach(
               (frag) => frag && (frag.cc = discontinuityCounter),
             );
@@ -774,6 +794,10 @@ export default class M3U8Parser {
     }
     if (!level.targetduration) {
       level.playlistParsingError = new Error(`Missing Target Duration`);
+    } else if (parent && sequenceTagCount < 2) {
+      level.playlistParsingError = new Error(
+        `Missing Playlist Archive EXT-X-MEDIA-SEQUENCE or EXT-X-DISCONTINUITY-SEQUENCE`,
+      );
     }
     const fragmentLength = fragments.length;
     const firstFragment = fragments[0];
@@ -783,7 +807,7 @@ export default class M3U8Parser {
       level.averagetargetduration = totalduration / fragmentLength;
       const lastSn = lastFragment.sn;
       level.endSN = lastSn !== 'initSegment' ? lastSn : 0;
-      if (!level.live) {
+      if (!level.live && !parent) {
         lastFragment.endList = true;
       }
       /**
