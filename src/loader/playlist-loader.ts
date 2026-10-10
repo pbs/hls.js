@@ -397,77 +397,79 @@ class PlaylistLoader implements NetworkComponentAPI {
     event: Events.ARCHIVE_LOADING,
     data: ArchiveLoadingData,
   ) {
-    const { archive, levelDetails, type, level } = data;
-    const config = this.hls.config;
-    const PLoader = config.pLoader || config.loader;
-    const loader = new PLoader(config) as Loader<PlaylistLoaderContext>;
-    const context: PlaylistLoaderContext = {
-      type: LoaderContextType.ARCHIVE,
-      url: archive.url,
-      responseType: 'text',
-      level,
-      id: level,
-      levelDetails,
-      deliveryDirectives: null,
-      levelOrTrack: null,
-    };
-    archive.loader = loader;
-    archive.error = null;
-    loader.load(context, getLoaderConfig(config.playlistLoadPolicy.default), {
-      onSuccess: (response, stats, context, networkDetails) => {
-        archive.loader = null;
-        stats.parsing.start = performance.now();
-        const details = M3U8Parser.parseLevelPlaylist(
-          response.data as string,
-          getResponseUrl(response, context),
-          level,
-          type,
-          0,
-          this.variableList,
-          levelDetails,
-        );
-        stats.parsing.end = performance.now();
-        if (details.playlistParsingError) {
+    if (__USE_PLAYLIST_ARCHIVES__) {
+      const { archive, levelDetails, type, level } = data;
+      const config = this.hls.config;
+      const PLoader = config.pLoader || config.loader;
+      const loader = new PLoader(config) as Loader<PlaylistLoaderContext>;
+      const context: PlaylistLoaderContext = {
+        type: LoaderContextType.ARCHIVE,
+        url: archive.url,
+        responseType: 'text',
+        level,
+        id: level,
+        levelDetails,
+        deliveryDirectives: null,
+        levelOrTrack: null,
+      };
+      archive.loader = loader;
+      archive.error = null;
+      loader.load(context, getLoaderConfig(config.playlistLoadPolicy.default), {
+        onSuccess: (response, stats, context, networkDetails) => {
+          archive.loader = null;
+          stats.parsing.start = performance.now();
+          const details = M3U8Parser.parseLevelPlaylist(
+            response.data as string,
+            getResponseUrl(response, context),
+            level,
+            type,
+            0,
+            this.variableList,
+            levelDetails,
+          );
+          stats.parsing.end = performance.now();
+          if (details.playlistParsingError) {
+            this.handleArchiveError(
+              data,
+              ErrorDetails.ARCHIVE_PARSING_ERROR,
+              details.playlistParsingError,
+              networkDetails,
+              stats,
+            );
+            return;
+          }
+          this.hls.trigger(Events.ARCHIVE_LOADED, {
+            archive,
+            details,
+            type,
+            level,
+            stats,
+            networkDetails,
+          });
+        },
+        onError: (response, context, networkDetails, stats) => {
           this.handleArchiveError(
             data,
-            ErrorDetails.ARCHIVE_PARSING_ERROR,
-            details.playlistParsingError,
+            ErrorDetails.ARCHIVE_LOAD_ERROR,
+            new Error(
+              `HTTP Error ${response.code} ${response.text} (${context.url})`,
+            ),
+            networkDetails,
+            stats,
+            response,
+          );
+        },
+        onTimeout: (stats, context, networkDetails) => {
+          this.handleArchiveError(
+            data,
+            ErrorDetails.ARCHIVE_LOAD_TIMEOUT,
+            new Error(`Timeout loading Playlist Archive (${context.url})`),
             networkDetails,
             stats,
           );
-          return;
-        }
-        this.hls.trigger(Events.ARCHIVE_LOADED, {
-          archive,
-          details,
-          type,
-          level,
-          stats,
-          networkDetails,
-        });
-      },
-      onError: (response, context, networkDetails, stats) => {
-        this.handleArchiveError(
-          data,
-          ErrorDetails.ARCHIVE_LOAD_ERROR,
-          new Error(
-            `HTTP Error ${response.code} ${response.text} (${context.url})`,
-          ),
-          networkDetails,
-          stats,
-          response,
-        );
-      },
-      onTimeout: (stats, context, networkDetails) => {
-        this.handleArchiveError(
-          data,
-          ErrorDetails.ARCHIVE_LOAD_TIMEOUT,
-          new Error(`Timeout loading Playlist Archive (${context.url})`),
-          networkDetails,
-          stats,
-        );
-      },
-    });
+        },
+      });
+    }
   }
 
   private handleArchiveError(
@@ -478,26 +480,28 @@ class PlaylistLoader implements NetworkComponentAPI {
     stats: LoaderStats,
     response?: { code: number; text: string },
   ) {
-    const { archive } = data;
-    archive.loader = null;
-    archive.error = error;
-    this.hls.trigger(Events.ERROR, {
-      type: ErrorTypes.NETWORK_ERROR,
-      details,
-      fatal: false,
-      url: archive.url,
-      archive,
-      parent: data.type,
-      error,
-      reason: error.message,
-      response: response && {
+    if (__USE_PLAYLIST_ARCHIVES__) {
+      const { archive } = data;
+      archive.loader = null;
+      archive.error = error;
+      this.hls.trigger(Events.ERROR, {
+        type: ErrorTypes.NETWORK_ERROR,
+        details,
+        fatal: false,
         url: archive.url,
-        data: undefined as any,
-        ...response,
-      },
-      networkDetails,
-      stats,
-    });
+        archive,
+        parent: data.type,
+        error,
+        reason: error.message,
+        response: response && {
+          url: archive.url,
+          data: undefined as any,
+          ...response,
+        },
+        networkDetails,
+        stats,
+      });
+    }
   }
 
   private checkAutostartLoad() {

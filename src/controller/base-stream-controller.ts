@@ -400,9 +400,11 @@ export default class BaseStreamController
   protected onMediaSeeking = () => {
     const { config, fragCurrent, media, mediaBuffer, state } = this;
     const currentTime: number = media ? media.currentTime : 0;
-    const archive = this.getLevelDetails()?.archiveAt(currentTime);
-    if (archive && !archive.loader) {
-      archive.error = null;
+    if (__USE_PLAYLIST_ARCHIVES__) {
+      const archive = this.getLevelDetails()?.archiveAt(currentTime);
+      if (archive && !archive.loader) {
+        archive.error = null;
+      }
     }
     const bufferInfo = BufferHelper.bufferInfo(
       mediaBuffer ? mediaBuffer : media,
@@ -1547,6 +1549,7 @@ export default class BaseStreamController
     let frag: MediaFragment | null = null;
 
     if (
+      __USE_PLAYLIST_ARCHIVES__ &&
       levelDetails.archives &&
       pos < playlistStart &&
       (this.startFragRequested ||
@@ -1646,177 +1649,182 @@ export default class BaseStreamController
     pos: number,
     levelDetails: LevelDetails,
   ): MediaFragment | null {
-    const start = levelDetails.start;
-    if (pos < start) {
-      pos = this.nextLoadPosition = start;
-    }
-    const archive = levelDetails.archiveAt(pos);
-    if (!archive) {
-      return this.getFragmentAtPosition(
-        Math.max(pos, levelDetails.fragmentStart),
-        levelDetails.fragmentEnd,
-        levelDetails,
-      );
-    }
-    const details = archive.details;
-    const end = levelDetails.archiveEnd(archive);
-    if (details?.fragments.length) {
-      const frag = this.getFragmentAtPosition(
-        Math.max(pos, details.fragmentStart),
-        details.fragmentEnd,
-        details,
-      );
-      if (frag) {
-        this.manageArchives(levelDetails, archive);
-        return frag;
+    if (__USE_PLAYLIST_ARCHIVES__) {
+      const start = levelDetails.start;
+      if (pos < start) {
+        pos = this.nextLoadPosition = start;
       }
-      // Continue with the successor once the end of a loaded archive is buffered
-      return this.getArchiveFragment(end, levelDetails);
+      const archive = levelDetails.archiveAt(pos);
+      if (!archive) {
+        return this.getFragmentAtPosition(
+          Math.max(pos, levelDetails.fragmentStart),
+          levelDetails.fragmentEnd,
+          levelDetails,
+        );
+      }
+      const details = archive.details;
+      const end = levelDetails.archiveEnd(archive);
+      if (details?.fragments.length) {
+        const frag = this.getFragmentAtPosition(
+          Math.max(pos, details.fragmentStart),
+          details.fragmentEnd,
+          details,
+        );
+        if (frag) {
+          this.manageArchives(levelDetails, [archive]);
+          return frag;
+        }
+        // Continue with the successor once the end of a loaded archive is buffered
+        return this.getArchiveFragment(end, levelDetails);
+      }
+      if (archive.error) {
+        return null;
+      }
+      if (details) {
+        return this.getArchiveFragment(end, levelDetails);
+      }
+      this.loadArchive(archive, levelDetails);
     }
-    if (archive.error) {
-      return null;
-    }
-    if (details) {
-      return this.getArchiveFragment(end, levelDetails);
-    }
-    this.manageArchives(
-      levelDetails,
-      archive,
-      this.loadArchive(archive, levelDetails),
-    );
     return null;
   }
 
   private manageArchives(
     levelDetails: LevelDetails,
-    ...needed: PlaylistArchive[]
+    needed: PlaylistArchive[],
   ) {
-    const { fragCurrent, levels, media } = this;
-    if (media) {
-      needed.push(levelDetails.archiveAt(media.currentTime) as PlaylistArchive);
-    }
-    if (fragCurrent && isMediaFragment(fragCurrent) && levels) {
-      const loading = levels[fragCurrent.level]?.details;
-      needed.push(loading?.archiveWithSN(fragCurrent.sn) as PlaylistArchive);
-    }
-    levels?.forEach((level) =>
-      level.details?.archives?.forEach((archive) => {
-        if (
-          (archive.details || archive.loader) &&
-          needed.indexOf(archive) === -1
-        ) {
-          this.log(
-            `Releasing Playlist Archive ${archive.firstSN} ${archive.url}`,
-          );
-          if (archive.loader) {
-            archive.loader.abort();
-            archive.loader = null;
+    if (__USE_PLAYLIST_ARCHIVES__) {
+      const { fragCurrent, levels, media } = this;
+      if (media) {
+        needed.push(
+          levelDetails.archiveAt(media.currentTime) as PlaylistArchive,
+        );
+      }
+      if (fragCurrent && isMediaFragment(fragCurrent) && levels) {
+        const loading = levels[fragCurrent.level]?.details;
+        needed.push(loading?.archiveWithSN(fragCurrent.sn) as PlaylistArchive);
+      }
+      levels?.forEach((level) =>
+        level.details?.archives?.forEach((archive) => {
+          if (
+            (archive.details || archive.loader) &&
+            needed.indexOf(archive) === -1
+          ) {
+            this.log(
+              `Releasing Playlist Archive ${archive.firstSN} ${archive.url}`,
+            );
+            if (archive.loader) {
+              archive.loader.abort();
+              archive.loader = null;
+            }
+            if (archive.details?.fragments.length) {
+              archive.start = archive.details.fragmentStart;
+            }
+            archive.details = null;
           }
-          if (archive.details?.fragments.length) {
-            archive.start = archive.details.fragmentStart;
-          }
-          archive.details = null;
-        }
-      }),
-    );
+        }),
+      );
+    }
   }
 
-  private loadArchive(
-    archive: PlaylistArchive,
-    levelDetails: LevelDetails,
-  ): PlaylistArchive {
-    const archives = levelDetails.archives!;
-    const newest = archives[archives.length - 1];
-    // An archive that starts in the playlist, failed, or loaded empty has nothing to place
-    const successorPlaced = archives
-      .slice(archives.indexOf(archive) + 1)
-      .some(
-        (newer) =>
-          Number.isFinite(newer.start) ||
-          newer.firstSN >= levelDetails.startSN ||
-          !!newer.error ||
-          !!newer.details,
-      );
-    // Place archives from the newest back so that each is aligned to its successor
-    const target = successorPlaced || archive === newest ? archive : newest;
-    if (!target.loader && !target.details) {
-      this.log(`Loading Playlist Archive ${target.firstSN} ${target.url}`);
-      this.hls.trigger(Events.ARCHIVE_LOADING, {
-        archive: target,
-        levelDetails,
-        type: this.playlistType,
-        level: levelDetails.fragments[0].level,
-      });
+  private loadArchive(archive: PlaylistArchive, levelDetails: LevelDetails) {
+    if (__USE_PLAYLIST_ARCHIVES__) {
+      const archives = levelDetails.archives!;
+      const newest = archives[archives.length - 1];
+      // An archive that starts in the playlist, failed, or loaded empty has nothing to place
+      const successorPlaced = archives
+        .slice(archives.indexOf(archive) + 1)
+        .some(
+          (newer) =>
+            Number.isFinite(newer.start) ||
+            newer.firstSN >= levelDetails.startSN ||
+            !!newer.error ||
+            !!newer.details,
+        );
+      // Place archives from the newest back so that each is aligned to its successor
+      const target = successorPlaced || archive === newest ? archive : newest;
+      if (!target.loader && !target.details) {
+        this.log(`Loading Playlist Archive ${target.firstSN} ${target.url}`);
+        this.hls.trigger(Events.ARCHIVE_LOADING, {
+          archive: target,
+          levelDetails,
+          type: this.playlistType,
+          level: levelDetails.fragments[0].level,
+        });
+      }
+      this.manageArchives(levelDetails, [archive, target]);
     }
-    return target;
   }
 
   protected onArchiveLoaded(
     event: Events.ARCHIVE_LOADED,
     data: ArchiveLoadedData,
   ) {
-    const { archive, details } = data;
-    const levelDetails = this.getLevelDetails();
-    const archives = levelDetails?.archives;
-    const index = archives ? archives.indexOf(archive) : -1;
-    if (
-      data.type !== this.playlistType ||
-      !levelDetails ||
-      !archives ||
-      index === -1 ||
-      archive.details
-    ) {
-      return;
-    }
-    const successor = archives[index + 1] as PlaylistArchive | undefined;
-    // Segments from the start of the playlist on play from the playlist
-    const endSN =
-      Math.min(
-        successor ? successor.firstSN : levelDetails.startSN,
-        levelDetails.startSN,
-      ) - 1;
-    const playlistFrag = levelDetails.fragments[0];
-    const overlapFrag = details.fragments[playlistFrag.sn - details.startSN];
-    if (overlapFrag && overlapFrag.cc !== playlistFrag.cc) {
-      const ccOffset = playlistFrag.cc - overlapFrag.cc;
-      details.fragments.forEach((frag) => (frag.cc += ccOffset));
-    }
-    archive.details = details;
-    trimArchive(archive, endSN);
-    if (details.fragments.length) {
-      if (details.endSN !== endSN) {
-        this.log(
-          `Playlist Archive ends at ${details.endSN}, expected ${endSN} ${archive.url}`,
+    if (__USE_PLAYLIST_ARCHIVES__) {
+      const { archive, details } = data;
+      const levelDetails = this.getLevelDetails();
+      const archives = levelDetails?.archives;
+      const index = archives ? archives.indexOf(archive) : -1;
+      if (
+        data.type !== this.playlistType ||
+        !levelDetails ||
+        !archives ||
+        index === -1 ||
+        archive.details
+      ) {
+        return;
+      }
+      const successor = archives[index + 1] as PlaylistArchive | undefined;
+      // Segments from the start of the playlist on play from the playlist
+      const endSN =
+        Math.min(
+          successor ? successor.firstSN : levelDetails.startSN,
+          levelDetails.startSN,
+        ) - 1;
+      const playlistFrag = levelDetails.fragments[0];
+      const overlapFrag = details.fragments[playlistFrag.sn - details.startSN];
+      if (overlapFrag && overlapFrag.cc !== playlistFrag.cc) {
+        const ccOffset = playlistFrag.cc - overlapFrag.cc;
+        details.fragments.forEach((frag) => (frag.cc += ccOffset));
+      }
+      archive.details = details;
+      trimArchive(archive, endSN);
+      if (details.fragments.length) {
+        if (details.endSN !== endSN) {
+          this.log(
+            `Playlist Archive ends at ${details.endSN}, expected ${endSN} ${archive.url}`,
+          );
+        }
+        addSliding(
+          details,
+          levelDetails.archiveEnd(archive) - details.fragmentEnd,
         );
+        archive.start = details.fragmentStart;
+        const initSegment = playlistFrag.initSegment;
+        if (initSegment) {
+          details.fragments.forEach((frag) => {
+            if (frag.initSegment?.url === initSegment.url) {
+              frag.initSegment = initSegment;
+            }
+          });
+        }
       }
-      addSliding(
-        details,
-        levelDetails.archiveEnd(archive) - details.fragmentEnd,
+      this.log(
+        `Playlist Archive ${archive.firstSN} [${details.startSN}-${details.endSN}] placed at ${archive.start.toFixed(3)}-${levelDetails.archiveEnd(archive).toFixed(3)}`,
       );
-      archive.start = details.fragmentStart;
-      const initSegment = playlistFrag.initSegment;
-      if (initSegment) {
-        details.fragments.forEach((frag) => {
-          if (frag.initSegment?.url === initSegment.url) {
-            frag.initSegment = initSegment;
-          }
-        });
-      }
+      this.manageArchives(levelDetails, [archive]);
+      this.tickImmediate();
     }
-    this.log(
-      `Playlist Archive ${archive.firstSN} [${details.startSN}-${details.endSN}] placed at ${archive.start.toFixed(3)}-${levelDetails.archiveEnd(archive).toFixed(3)}`,
-    );
-    this.manageArchives(levelDetails, archive);
-    this.tickImmediate();
   }
 
   protected abortArchiveLoads(details: LevelDetails | undefined) {
-    details?.archives?.forEach((archive) => {
-      if (archive.loader) {
-        archive.loader.abort();
-        archive.loader = null;
-      }
-    });
+    if (__USE_PLAYLIST_ARCHIVES__) {
+      details?.archives?.forEach((archive) => {
+        if (archive.loader) {
+          archive.loader.abort();
+          archive.loader = null;
+        }
+      });
+    }
   }
 
   protected isLoopLoading(frag: Fragment, targetBufferTime: number): boolean {
@@ -2180,7 +2188,12 @@ export default class BaseStreamController
     const aligned = details.alignedSliding && Number.isFinite(slidingStart);
     if (firstLevelLoad || (!aligned && !slidingStart)) {
       alignStream(switchDetails, details, this);
-      if (firstLevelLoad && !switchDetails && details.archives) {
+      if (
+        __USE_PLAYLIST_ARCHIVES__ &&
+        firstLevelLoad &&
+        !switchDetails &&
+        details.archives
+      ) {
         addSliding(
           details,
           details.archives.reduce((sum, archive) => sum + archive.duration, 0),
@@ -2212,7 +2225,10 @@ export default class BaseStreamController
   protected setStartPosition(details: LevelDetails, sliding: number) {
     // compute start position if set to -1. use it straight away if value is defined
     let startPosition = this.startPosition;
-    if (startPosition < (details.archives ? details.start : sliding)) {
+    if (
+      startPosition <
+      (__USE_PLAYLIST_ARCHIVES__ && details.archives ? details.start : sliding)
+    ) {
       startPosition = -1;
     }
     const timelineOffset = this.timelineOffset;

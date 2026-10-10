@@ -524,12 +524,14 @@ export function addSliding(details: LevelDetails, sliding: number) {
 }
 
 export function addArchiveSliding(details: LevelDetails, sliding: number) {
-  details.archives?.forEach((archive) => {
-    archive.start += sliding;
-    if (archive.details) {
-      addSliding(archive.details, sliding);
-    }
-  });
+  if (__USE_PLAYLIST_ARCHIVES__) {
+    details.archives?.forEach((archive) => {
+      archive.start += sliding;
+      if (archive.details) {
+        addSliding(archive.details, sliding);
+      }
+    });
+  }
 }
 
 function mergeArchives(
@@ -666,10 +668,12 @@ export function getFragmentWithSN(
   if (fragment?.sn === sn) {
     return fragment;
   }
-  const archiveDetails = details.archiveWithSN(sn)?.details;
-  const archiveFrag = archiveDetails && getFragmentWithSN(archiveDetails, sn);
-  if (archiveFrag) {
-    return archiveFrag;
+  if (__USE_PLAYLIST_ARCHIVES__) {
+    const archiveDetails = details.archiveWithSN(sn)?.details;
+    const archiveFrag = archiveDetails && getFragmentWithSN(archiveDetails, sn);
+    if (archiveFrag) {
+      return archiveFrag;
+    }
   }
   if (fragCurrent && sn < details.startSN && fragCurrent.sn === sn) {
     return fragCurrent as MediaFragment;
@@ -709,11 +713,13 @@ export function reassignFragmentLevelIndexes(levels: Level[]) {
     const details = level.details;
     if (details) {
       assignLevelIndex(details, index);
-      details.archives?.forEach((archive) => {
-        if (archive.details) {
-          assignLevelIndex(archive.details, index);
-        }
-      });
+      if (__USE_PLAYLIST_ARCHIVES__) {
+        details.archives?.forEach((archive) => {
+          if (archive.details) {
+            assignLevelIndex(archive.details, index);
+          }
+        });
+      }
     }
   });
 }

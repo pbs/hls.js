@@ -331,7 +331,7 @@ export default class M3U8Parser {
     const base = { url: baseurl };
     const level = new LevelDetails(baseurl);
     let sequenceTagCount = 0;
-    if (parent) {
+    if (__USE_PLAYLIST_ARCHIVES__ && parent) {
       level.live = false;
       level.targetduration = parent.targetduration;
       level.iframesOnly = parent.iframesOnly;
@@ -362,13 +362,14 @@ export default class M3U8Parser {
       ? hasVariableReferences(string)
       : false;
     if (LEVEL_PLAYLIST_REGEX_FAST.exec(string)?.[0] !== '#EXTM3U') {
-      if (!parent) {
+      if (__USE_PLAYLIST_ARCHIVES__ && parent) {
+        LEVEL_PLAYLIST_REGEX_FAST.lastIndex = 0;
+      } else {
         level.playlistParsingError = new Error(
           'Missing format identifier #EXTM3U',
         );
         return level;
       }
-      LEVEL_PLAYLIST_REGEX_FAST.lastIndex = 0;
     }
     while ((result = LEVEL_PLAYLIST_REGEX_FAST.exec(string)) !== null) {
       if (createNextFrag) {
@@ -477,7 +478,11 @@ export default class M3U8Parser {
         const tag = (' ' + result[i]).slice(1);
         const value1 = (' ' + result[i + 1]).slice(1);
         const value2 = result[i + 2] ? (' ' + result[i + 2]).slice(1) : null;
-        if (parent && ARCHIVE_IGNORED_TAGS.test(tag)) {
+        if (
+          __USE_PLAYLIST_ARCHIVES__ &&
+          parent &&
+          ARCHIVE_IGNORED_TAGS.test(tag)
+        ) {
           continue;
         }
 
@@ -794,7 +799,7 @@ export default class M3U8Parser {
     }
     if (!level.targetduration) {
       level.playlistParsingError = new Error(`Missing Target Duration`);
-    } else if (parent && sequenceTagCount < 2) {
+    } else if (__USE_PLAYLIST_ARCHIVES__ && parent && sequenceTagCount < 2) {
       level.playlistParsingError = new Error(
         `Missing Playlist Archive EXT-X-MEDIA-SEQUENCE or EXT-X-DISCONTINUITY-SEQUENCE`,
       );

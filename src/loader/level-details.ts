@@ -116,7 +116,7 @@ export class LevelDetails {
   get start(): number {
     const archives = this.archives;
     let start = this.fragmentStart;
-    if (archives) {
+    if (__USE_PLAYLIST_ARCHIVES__ && archives) {
       for (let i = archives.length; i--; ) {
         if (archives[i].firstSN < this.startSN) {
           start = getArchiveStart(archives[i], start);
@@ -129,7 +129,7 @@ export class LevelDetails {
   archiveAt(position: number): PlaylistArchive | null {
     const archives = this.archives;
     let successorStart = this.fragmentStart;
-    if (archives && position < successorStart) {
+    if (__USE_PLAYLIST_ARCHIVES__ && archives && position < successorStart) {
       let successor: PlaylistArchive | null = null;
       for (let i = archives.length; i--; ) {
         const archive = archives[i];
@@ -152,14 +152,16 @@ export class LevelDetails {
   }
 
   archiveEnd(archive: PlaylistArchive): number {
-    const archives = this.archives || [];
+    const archives = this.archives;
     let successorStart = this.fragmentStart;
-    for (let i = archives.length; i--; ) {
-      if (archives[i] === archive) {
-        return successorStart;
-      }
-      if (archives[i].firstSN < this.startSN) {
-        successorStart = getArchiveStart(archives[i], successorStart);
+    if (__USE_PLAYLIST_ARCHIVES__ && archives) {
+      for (let i = archives.length; i--; ) {
+        if (archives[i] === archive) {
+          return successorStart;
+        }
+        if (archives[i].firstSN < this.startSN) {
+          successorStart = getArchiveStart(archives[i], successorStart);
+        }
       }
     }
     return NaN;
@@ -167,7 +169,7 @@ export class LevelDetails {
 
   archiveWithSN(sn: number): PlaylistArchive | null {
     const archives = this.archives;
-    if (archives && sn < this.startSN) {
+    if (__USE_PLAYLIST_ARCHIVES__ && archives && sn < this.startSN) {
       for (let i = archives.length; i--; ) {
         if (sn >= archives[i].firstSN) {
           return archives[i];

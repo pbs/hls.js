@@ -690,11 +690,13 @@ export default class StreamController
     }
 
     // Remove timestamp mapping from sparse array for discontinuities no longer present
-    const startCC = (newDetails.archives || []).reduce(
-      (cc, archive) =>
-        archive.details ? Math.min(cc, archive.details.startCC) : cc,
-      newDetails.startCC,
-    );
+    const startCC = __USE_PLAYLIST_ARCHIVES__
+      ? (newDetails.archives || []).reduce(
+          (cc, archive) =>
+            archive.details ? Math.min(cc, archive.details.startCC) : cc,
+          newDetails.startCC,
+        )
+      : newDetails.startCC;
     this.initPTS.some((t, i) => {
       if (i >= startCC) {
         return true;
@@ -715,24 +717,26 @@ export default class StreamController
     const currentTime = this.playhead;
     const start = levelDetails.start;
     const end = levelDetails.edge;
-    const bufferEnd = BufferHelper.bufferInfo(media, currentTime, 0).end;
-    const archive = levelDetails.archiveAt(
-      bufferEnd + config.maxFragLookUpTolerance,
-    );
-    if (
-      levelDetails.archives &&
-      (currentTime < start || (archive?.error && bufferEnd - currentTime < 1))
-    ) {
-      if (media.readyState) {
-        const position = archive
-          ? levelDetails.archiveEnd(archive) + config.maxFragLookUpTolerance
-          : start;
-        this.log(
-          `Playback: ${currentTime} is outside of available Playlist Archives, reset currentTime to ${position}`,
-        );
-        media.currentTime = position;
+    if (__USE_PLAYLIST_ARCHIVES__ && levelDetails.archives) {
+      const bufferEnd = BufferHelper.bufferInfo(media, currentTime, 0).end;
+      const archive = levelDetails.archiveAt(
+        bufferEnd + config.maxFragLookUpTolerance,
+      );
+      if (
+        currentTime < start ||
+        (archive?.error && bufferEnd - currentTime < 1)
+      ) {
+        if (media.readyState) {
+          const position = archive
+            ? levelDetails.archiveEnd(archive) + config.maxFragLookUpTolerance
+            : start;
+          this.log(
+            `Playback: ${currentTime} is outside of available Playlist Archives, reset currentTime to ${position}`,
+          );
+          media.currentTime = position;
+        }
+        return;
       }
-      return;
     }
     const withinSlidingWindow =
       currentTime >= start - config.maxFragLookUpTolerance &&
