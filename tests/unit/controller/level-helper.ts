@@ -21,6 +21,7 @@ import {
   mapPartIntersection,
   mergeDetails,
   reassignFragmentLevelIndexes,
+  trimArchive,
 } from '../../../src/utils/level-helper';
 import { logger } from '../../../src/utils/logger';
 import type { MediaFragment } from '../../../src/loader/fragment';
@@ -2688,6 +2689,29 @@ ${segments(first, last)}`,
     expect(newDetails.start).to.equal(0);
   });
 
+  it('places archives before the playlist when more than one archive reaches into it', function () {
+    // a holds 0-9 and b 10-19; b is all in the playlist and plays from it
+    const oldDetails = playlist(8, 22, [
+      tag(0, 40, 'a.m3u8a'),
+      tag(10, 0, 'b.m3u8a'),
+    ]);
+    addSliding(oldDetails, 40);
+    const [a] = oldDetails.archives!;
+    expect(oldDetails.start).to.equal(0);
+    expect(oldDetails.archiveAt(39)).to.equal(a);
+    expect(oldDetails.archiveEnd(a)).to.equal(40);
+    const newDetails = playlist(9, 23, [
+      tag(0, 45, 'a.m3u8a'),
+      tag(10, 0, 'b.m3u8a'),
+    ]);
+    mergeDetails(oldDetails, newDetails, logger);
+    expect(newDetails.archives![1].start).to.equal(50);
+    expect(newDetails.start).to.equal(0);
+    expect(newDetails.archiveEnd(a)).to.equal(45);
+    expect(newDetails.archiveAt(44)).to.equal(a);
+    expect(newDetails.archiveAt(45)).to.be.null;
+  });
+
   it('hands fragments rolled out of the playlist to the loaded archive that holds them', function () {
     const oldDetails = playlist(10, 18, [tag(7, 30, 'b.m3u8a')]);
     const b = loadArchive(oldDetails, 0, 7, 9, -15);
@@ -2703,6 +2727,18 @@ ${segments(first, last)}`,
     expect(b.details!.fragmentEnd).to.equal(newDetails.fragmentStart);
     expect(getFragmentWithSN(newDetails, 11)).to.equal(rolledOff[1]);
     expect(getFragmentWithSN(newDetails, 8)).to.equal(b.details!.fragments[1]);
+  });
+
+  it('hands fragments rolling out of the playlist to an archive loaded while it had none before the playlist', function () {
+    const oldDetails = playlist(10, 18, [tag(12, 0, 'b.m3u8a')]);
+    const b = loadArchive(oldDetails, 0, 12, 15, 10);
+    trimArchive(b, oldDetails.startSN - 1);
+    expect(b.details!.fragments).to.have.lengthOf(0);
+    const rolledOff = oldDetails.fragments.slice(2, 4);
+    const newDetails = playlist(14, 22, [tag(12, 10, 'b.m3u8a')]);
+    mergeDetails(oldDetails, newDetails, logger);
+    expect(b.details!.fragments).to.deep.equal(rolledOff);
+    expect(b.details!.fragmentEnd).to.equal(newDetails.fragmentStart);
   });
 
   it('keeps records when a delta update has no archive tags', function () {
@@ -2728,6 +2764,38 @@ ${segments(first, last)}`,
     adjustSlidingStart(-40, details);
     expect(b.details!.fragmentStart).to.equal(30);
     expect(details.start).to.equal(0);
+  });
+
+  it('resolves positions and sequence numbers to archives', function () {
+    const details = playlist(13, 18, [
+      tag(1, 30, 'a.m3u8a'),
+      tag(7, 40, 'b.m3u8a'),
+    ]);
+    addSliding(details, 100);
+    const [a, b] = details.archives!;
+    // Unplaced: DURATION of the newest archive may include the overlap
+    expect(details.start).to.equal(30);
+    expect(details.archiveAt(59)).to.equal(a);
+    expect(details.archiveAt(60)).to.equal(b);
+    expect(details.archiveAt(100)).to.be.null;
+    expect(details.archiveAt(29)).to.be.null;
+    expect(details.archiveEnd(b)).to.equal(100);
+    expect(details.archiveEnd(a)).to.equal(60);
+    expect(details.archiveWithSN(0)).to.be.null;
+    expect(details.archiveWithSN(1)).to.equal(a);
+    expect(details.archiveWithSN(12)).to.equal(b);
+    expect(details.archiveWithSN(13)).to.be.null;
+
+    loadArchive(details, 1, 7, 12, 70);
+    expect(details.start).to.equal(40);
+    expect(details.archiveEnd(a)).to.equal(70);
+    expect(details.archiveAt(69)).to.equal(a);
+    expect(details.archiveAt(70)).to.equal(b);
+
+    // A loaded archive that ends early hands off to its successor
+    b.details!.fragments.pop();
+    expect(details.archiveAt(97)).to.be.null;
+    expect(details.archiveAt(94)).to.equal(b);
   });
 
   it('reassigns level indexes of archive fragments', function () {

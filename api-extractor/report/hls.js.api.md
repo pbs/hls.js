@@ -470,6 +470,8 @@ export class BaseSegment {
 // @public (undocumented)
 export class BaseStreamController extends TaskLoop implements NetworkComponentAPI {
     constructor(hls: Hls, fragmentTracker: FragmentTracker, keyLoader: KeyLoader, logPrefix: string, playlistType: PlaylistLevelType);
+    // (undocumented)
+    protected abortArchiveLoads(details: LevelDetails | undefined): void;
     protected abortCurrentFrag(): void;
     // (undocumented)
     protected afterBufferFlushed(media: Bufferable, bufferType: SourceBufferName): void;
@@ -603,6 +605,8 @@ export class BaseStreamController extends TaskLoop implements NetworkComponentAP
     nextLevelSwitch(): void;
     // (undocumented)
     protected nextLoadPosition: number;
+    // (undocumented)
+    protected onArchiveLoaded(event: Events.ARCHIVE_LOADED, data: ArchiveLoadedData): void;
     // (undocumented)
     protected onError(event: Events.ERROR, data: ErrorData): void;
     // (undocumented)
@@ -3611,6 +3615,8 @@ export class LevelDetails {
     appliedTimelineOffset?: number;
     // (undocumented)
     archiveAt(position: number): PlaylistArchive | null;
+    // (undocumented)
+    archiveEnd(archive: PlaylistArchive): number;
     // (undocumented)
     archives: PlaylistArchive[] | null;
     // (undocumented)

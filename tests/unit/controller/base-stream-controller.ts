@@ -5,17 +5,23 @@ import { hlsDefaultConfig } from '../../../src/config';
 import { State } from '../../../src/controller/base-stream-controller';
 import BaseStreamControllerImpl from '../../../src/controller/stream-controller';
 import { ErrorDetails, ErrorTypes } from '../../../src/errors';
+import { Events } from '../../../src/events';
 import Hls from '../../../src/hls';
 import { Fragment } from '../../../src/loader/fragment';
 import { LoadError } from '../../../src/loader/fragment-loader';
 import KeyLoader from '../../../src/loader/key-loader';
 import { LevelDetails } from '../../../src/loader/level-details';
 import { LevelKey } from '../../../src/loader/level-key';
+import { LoadStats } from '../../../src/loader/load-stats';
+import M3U8Parser from '../../../src/loader/m3u8-parser';
 import { PlaylistLevelType } from '../../../src/types/loader';
 import { BufferHelper } from '../../../src/utils/buffer-helper';
+import { addSliding } from '../../../src/utils/level-helper';
 import { TimeRangesMock } from '../../mocks/time-ranges.mock';
 import type BaseStreamController from '../../../src/controller/base-stream-controller';
 import type { MediaFragment, Part } from '../../../src/loader/fragment';
+import type { PlaylistArchive } from '../../../src/loader/playlist-archive';
+import type { Level } from '../../../src/types/level';
 import type { BufferInfo } from '../../../src/utils/buffer-helper';
 
 use(sinonChai);
@@ -1492,6 +1498,123 @@ describe('BaseStreamController', function () {
 
       expect((baseStreamController as any).scheduleTrackSwitch).to.not.have.been
         .called;
+    });
+  });
+
+  describe('Playlist Archives', function () {
+    const segments = (first: number, last: number) => {
+      let text = '';
+      for (let sn = first; sn <= last; sn++) {
+        text += `#EXTINF:5,\n${sn}.m4s\n`;
+      }
+      return text;
+    };
+    // A playlist placed after its archives, as on first load
+    const playlist = (
+      startSN: number,
+      endSN: number,
+      archives: [number, number, string][],
+      start: number,
+    ) => {
+      const details = M3U8Parser.parseLevelPlaylist(
+        `#EXTM3U
+#EXT-X-TARGETDURATION:5
+#EXT-X-MEDIA-SEQUENCE:${startSN}
+${archives.map(([firstSN, duration, uri]) => `#EXT-X-ARCHIVE:FIRST-MSN=${firstSN},DURATION=${duration},URI="${uri}"`).join('\n')}
+${segments(startSN, endSN)}`,
+        'http://example.com/live/v.m3u8',
+        0,
+        PlaylistLevelType.MAIN,
+        0,
+        null,
+      );
+      addSliding(details, start);
+      const level: Partial<Level> = { details };
+      (baseStreamController as any).levels = [level];
+      (baseStreamController as any).levelLastLoaded = level;
+      return details;
+    };
+    const archiveLoaded = (
+      details: LevelDetails,
+      archive: PlaylistArchive,
+      first: number,
+      last: number,
+    ) => {
+      const archiveDetails = M3U8Parser.parseLevelPlaylist(
+        `#EXT-X-MEDIA-SEQUENCE:${first}
+#EXT-X-DISCONTINUITY-SEQUENCE:0
+${segments(first, last)}`,
+        archive.url,
+        0,
+        PlaylistLevelType.MAIN,
+        0,
+        null,
+        details,
+      );
+      (baseStreamController as any).onArchiveLoaded(Events.ARCHIVE_LOADED, {
+        archive,
+        details: archiveDetails,
+        type: PlaylistLevelType.MAIN,
+        level: 0,
+        stats: new LoadStats(),
+        networkDetails: null,
+      });
+    };
+    let trigger: sinon.SinonStub;
+    beforeEach(function () {
+      baseStreamController.tickImmediate = sinon.stub();
+      trigger = sinon.stub(hls, 'trigger');
+    });
+    const archivesLoading = () =>
+      trigger
+        .getCalls()
+        .filter((call) => call.args[0] === Events.ARCHIVE_LOADING)
+        .map((call) => call.args[1].archive);
+
+    it('ends a loaded archive at the playlist start when the next archive starts inside the playlist', function () {
+      // a holds 0-9 and b 10-19; the playlist starts at 8, so b is all in the playlist
+      const details = playlist(
+        8,
+        22,
+        [
+          [0, 40, 'a.m3u8a'],
+          [10, 0, 'b.m3u8a'],
+        ],
+        40,
+      );
+      const [a] = details.archives!;
+      archiveLoaded(details, a, 0, 9);
+      expect(a.details!.endSN).to.equal(7);
+      expect(a.details!.fragmentStart).to.equal(0);
+      expect(a.details!.fragmentEnd).to.equal(details.fragmentStart);
+      expect(a.start).to.equal(0);
+    });
+
+    it('loads the archive playback needs when the newest archive failed or loaded empty', function () {
+      const details = playlist(
+        30,
+        40,
+        [
+          [0, 50, 'a.m3u8a'],
+          [10, 50, 'b.m3u8a'],
+          [20, 50, 'c.m3u8a'],
+        ],
+        150,
+      );
+      const [a, b, c] = details.archives!;
+      (baseStreamController as any).loadArchive(a, details);
+      expect(archivesLoading()).to.deep.equal([c]);
+      trigger.resetHistory();
+
+      c.error = new Error('archive load failed');
+      (baseStreamController as any).loadArchive(a, details);
+      expect(archivesLoading()).to.deep.equal([a]);
+      trigger.resetHistory();
+
+      c.error = null;
+      c.details = new LevelDetails(c.url);
+      (baseStreamController as any).loadArchive(b, details);
+      expect(archivesLoading()).to.deep.equal([b]);
     });
   });
 });

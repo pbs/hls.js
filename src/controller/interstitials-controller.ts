@@ -1568,7 +1568,7 @@ export default class InterstitialsController
   }
 
   private get seekableStart(): number {
-    return this.primaryLive ? this.primaryDetails?.fragmentStart || 0 : 0;
+    return this.primaryLive ? this.primaryDetails?.start || 0 : 0;
   }
 
   private getPrimaryResumption(
@@ -1593,7 +1593,7 @@ export default class InterstitialsController
       // start at live edge when item start is outside live playlist window
       const details = this.primaryDetails;
       if (details) {
-        const { fragmentStart, edge } = details;
+        const { start: fragmentStart, edge } = details;
         if (itemStart < fragmentStart || (itemStart > edge && !preloading)) {
           const liveSync = this.hls.liveSyncPosition;
           this.log(

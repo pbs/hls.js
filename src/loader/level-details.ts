@@ -118,7 +118,9 @@ export class LevelDetails {
     let start = this.fragmentStart;
     if (archives) {
       for (let i = archives.length; i--; ) {
-        start = getArchiveStart(archives[i], start);
+        if (archives[i].firstSN < this.startSN) {
+          start = getArchiveStart(archives[i], start);
+        }
       }
     }
     return Math.max(start, 0);
@@ -131,6 +133,10 @@ export class LevelDetails {
       let successor: PlaylistArchive | null = null;
       for (let i = archives.length; i--; ) {
         const archive = archives[i];
+        // Archives that start in the playlist play from the playlist
+        if (archive.firstSN >= this.startSN) {
+          continue;
+        }
         const start = getArchiveStart(archive, successorStart);
         if (position >= start) {
           const details = archive.details;
@@ -143,6 +149,20 @@ export class LevelDetails {
       }
     }
     return null;
+  }
+
+  archiveEnd(archive: PlaylistArchive): number {
+    const archives = this.archives || [];
+    let successorStart = this.fragmentStart;
+    for (let i = archives.length; i--; ) {
+      if (archives[i] === archive) {
+        return successorStart;
+      }
+      if (archives[i].firstSN < this.startSN) {
+        successorStart = getArchiveStart(archives[i], successorStart);
+      }
+    }
+    return NaN;
   }
 
   archiveWithSN(sn: number): PlaylistArchive | null {

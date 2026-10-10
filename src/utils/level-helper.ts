@@ -592,21 +592,26 @@ function mergeArchives(
   }
 }
 
-export function trimArchive(archive: PlaylistArchive) {
+export function trimArchive(
+  archive: PlaylistArchive,
+  endSN: number = Number.MAX_SAFE_INTEGER,
+) {
   const details = archive.details;
   const firstSN = archive.firstSN;
-  if (details && firstSN > details.startSN) {
-    const fragments = details.fragments;
-    fragments.splice(0, firstSN - details.startSN);
-    details.startSN = firstSN;
-    details.encryptedFragments = details.encryptedFragments.filter(
-      (frag) => frag.sn === 'initSegment' || frag.sn >= firstSN,
-    );
+  if (details && (firstSN > details.startSN || endSN < details.endSN)) {
+    const inRange = (frag: Fragment) =>
+      frag.sn === 'initSegment' || (frag.sn >= firstSN && frag.sn <= endSN);
+    const fragments = (details.fragments = details.fragments.filter(inRange));
+    details.encryptedFragments = details.encryptedFragments.filter(inRange);
     if (fragments.length) {
+      details.startSN = fragments[0].sn;
+      details.endSN = fragments[fragments.length - 1].sn;
       details.startCC = fragments[0].cc;
       details.totalduration = details.fragmentEnd - details.fragmentStart;
       archive.start = details.fragmentStart;
     } else {
+      details.startSN = firstSN;
+      details.endSN = firstSN - 1;
       details.totalduration = 0;
     }
   }

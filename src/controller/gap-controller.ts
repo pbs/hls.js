@@ -482,10 +482,7 @@ export default class GapController extends TaskLoop {
 
     const levelDetails = this.hls?.latestLevelDetails;
     const appended = appendedFragAtPosition(currentTime, fragmentTracker);
-    if (
-      appended ||
-      (levelDetails?.live && currentTime < levelDetails.fragmentStart)
-    ) {
+    if (appended || (levelDetails?.live && currentTime < levelDetails.start)) {
       // Try to skip over the buffer hole caused by a partial fragment
       // This method isn't limited by the size of the gap between buffered ranges
       const targetTime = this._trySkipBufferHole(appended);

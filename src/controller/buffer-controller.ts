@@ -402,10 +402,7 @@ transfer tracks: ${stringify(transferredTracks, (key, value) => (key === 'initSe
         const currentTime = media.currentTime;
 
         const details = this.details;
-        const startTime = Math.max(
-          currentTime,
-          details?.fragments[0].start || 0,
-        );
+        const startTime = Math.max(currentTime, details?.start || 0);
         if (startTime - currentTime > 1) {
           this.log(
             `attachTransferred: waiting for playback to reach new tracks start time ${currentTime} -> ${startTime}`,
@@ -1703,7 +1700,7 @@ transfer tracks: ${stringify(transferredTracks, (key, value) => (key === 'initSe
     if (details.live && this.hls.config.liveDurationInfinity) {
       const len = details.fragments.length;
       if (len && !!(mediaSource as any).setLiveSeekableRange) {
-        const start = Math.max(0, details.fragmentStart);
+        const start = details.start;
         const end = Math.max(start, playlistEnd);
 
         return { duration: Infinity, start, end };

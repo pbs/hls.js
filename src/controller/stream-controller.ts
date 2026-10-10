@@ -16,6 +16,7 @@ import {
   addEventListener,
   removeEventListener,
 } from '../utils/event-listener-helper';
+import { getFragmentWithSN } from '../utils/level-helper';
 import { useAlternateAudio } from '../utils/rendition-helper';
 import {
   userAgentFirefoxVersion,
@@ -340,9 +341,8 @@ export default class StreamController
       this.fragmentTracker.getState(frag) !== FragmentState.OK
     ) {
       const backtrackSn = (this.backtrackFragment ?? frag).sn as number;
-      const fragIdx = backtrackSn - levelDetails.startSN;
-      const backtrackFrag = levelDetails.fragments[fragIdx - 1];
-      if ((backtrackFrag as any) && frag.cc === backtrackFrag.cc) {
+      const backtrackFrag = getFragmentWithSN(levelDetails, backtrackSn - 1);
+      if (frag.cc === backtrackFrag?.cc) {
         frag = backtrackFrag;
         this.fragmentTracker.removeFragment(backtrackFrag);
       }
@@ -420,7 +420,7 @@ export default class StreamController
     this.flushMainBuffer(0, Number.POSITIVE_INFINITY);
     if (this.altAudio !== AlternateAudio.DISABLED) {
       // If behind the live window, remove audio too to keep buffered media aligned
-      const liveWindowStart = this.getLevelDetails()?.fragmentStart || 0;
+      const liveWindowStart = this.getLevelDetails()?.start || 0;
       if (liveWindowStart > this.lastCurrentTime) {
         super.flushMainBuffer(0, Number.POSITIVE_INFINITY, 'audio');
       }
@@ -690,8 +690,13 @@ export default class StreamController
     }
 
     // Remove timestamp mapping from sparse array for discontinuities no longer present
+    const startCC = (newDetails.archives || []).reduce(
+      (cc, archive) =>
+        archive.details ? Math.min(cc, archive.details.startCC) : cc,
+      newDetails.startCC,
+    );
     this.initPTS.some((t, i) => {
-      if (i >= newDetails.startCC) {
+      if (i >= startCC) {
         return true;
       }
       delete this.initPTS[i];
@@ -708,8 +713,17 @@ export default class StreamController
     }
     const liveSyncPosition = this.hls.liveSyncPosition;
     const currentTime = this.playhead;
-    const start = levelDetails.fragmentStart;
+    const start = levelDetails.start;
     const end = levelDetails.edge;
+    if (levelDetails.archives && currentTime < start) {
+      if (media.readyState) {
+        this.log(
+          `Playback: ${currentTime} is before the start of Playlist Archives: ${start}, reset currentTime to start`,
+        );
+        media.currentTime = start;
+      }
+      return;
+    }
     const withinSlidingWindow =
       currentTime >= start - config.maxFragLookUpTolerance &&
       currentTime <= end;
@@ -717,7 +731,8 @@ export default class StreamController
     if (
       liveSyncPosition !== null &&
       media.duration > liveSyncPosition &&
-      (currentTime < liveSyncPosition || !withinSlidingWindow)
+      (currentTime < liveSyncPosition || !withinSlidingWindow) &&
+      !levelDetails.archiveAt(currentTime)
     ) {
       // Continue if buffer is starving or if current time is behind max latency
       const maxLatency =
@@ -800,7 +815,8 @@ export default class StreamController
     const videoCodec = currentLevel.videoCodec;
 
     // time Offset is accurate if level PTS is known, or if playlist is not sliding (not live)
-    const accurateTimeOffset = details.PTSKnown || !details.live;
+    const owner = details.archiveWithSN(frag.sn)?.details || details;
+    const accurateTimeOffset = owner.PTSKnown || !owner.live;
     const initSegmentData = frag.initSegment?.data;
     const audioCodec = this._getAudioCodec(currentLevel);
 
@@ -841,7 +857,7 @@ export default class StreamController
       videoCodec,
       frag,
       part,
-      details.totalduration,
+      owner.totalduration,
       accurateTimeOffset,
       chunkMeta,
       initPTS,
@@ -1294,10 +1310,11 @@ export default class StreamController
       if (audio && video.type === 'audiovideo') {
         this.logMuxedErr(frag);
       }
-      const prevFrag = details.fragments[frag.sn - 1 - details.startSN];
-      const isFirstFragment = frag.sn === details.startSN;
-      const isFirstInDiscontinuity =
-        (!prevFrag as any) || frag.cc > prevFrag.cc;
+      const prevFrag = getFragmentWithSN(details, frag.sn - 1);
+      const archives = details.archives;
+      const isFirstFragment =
+        frag.sn === (archives ? archives[0].firstSN : details.startSN);
+      const isFirstInDiscontinuity = !prevFrag || frag.cc > prevFrag.cc;
       if (remuxResult.independent !== false) {
         const { startPTS, endPTS, startDTS, endDTS } = video;
         if (part) {
@@ -1620,11 +1637,10 @@ export default class StreamController
     const currentTime = this.media?.currentTime || this.lastCurrentTime;
     if (Number.isFinite(currentTime)) {
       const details = this.getLevelDetails();
+      const owner = details?.archiveAt(currentTime)?.details || details;
       const frag =
         this.currentFrag ||
-        (details
-          ? findFragmentByPTS(null, details.fragments, currentTime)
-          : null);
+        (owner ? findFragmentByPTS(null, owner.fragments, currentTime) : null);
       if (frag) {
         const programDateTime = frag.programDateTime;
         if (programDateTime !== null) {
