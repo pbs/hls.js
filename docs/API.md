@@ -2618,6 +2618,8 @@ type InterstitialAssetErrorData = {
 
 - get: Returns the `LevelDetails` of last loaded level (variant) or `null` prior to loading a media playlist.
 
+With Playlist Archives (`EXT-X-ARCHIVE`), `LevelDetails.fragments` holds only the Media Playlist's own segments, and `LevelDetails.archives` lists the archives behind them. `LevelDetails.start` is the start of the presentation, including archived content. Archives are loaded as playback or seeking reaches them, and only those needed for playback and loading are held.
+
 ### `hls.loadLevelObj`
 
 - get: Returns the `Level` object of the selected level (variant) or `null` prior to selecting a level or once the level is removed.
@@ -2699,6 +2701,10 @@ Full list of Events is available below:
   - data: { details : [LevelDetails](#leveldetails), level : id of updated level }
 - `Hls.Events.LEVEL_PTS_UPDATED` - fired when a level's PTS information has been updated after parsing a fragment
   - data: { details : [LevelDetails](#leveldetails), level : id of updated level, drift: PTS drift observed when parsing last fragment, type, start, end }
+- `Hls.Events.ARCHIVE_LOADING` - fired when a Playlist Archive (`EXT-X-ARCHIVE`) starts loading
+  - data: { archive : PlaylistArchive, levelDetails : [LevelDetails](#leveldetails) of the Media Playlist listing it, type : PlaylistLevelType, level : level or track id }
+- `Hls.Events.ARCHIVE_LOADED` - fired when a Playlist Archive has loaded
+  - data: { archive : PlaylistArchive, details : archive [LevelDetails](#leveldetails), type : PlaylistLevelType, level : level or track id, stats : LoaderStats, networkDetails }
 - `Hls.Events.LEVELS_UPDATED` - fired when a level is removed after calling `removeLevel()`
   - data: { levels : [ available quality levels ] }
 - `Hls.Events.AUDIO_TRACKS_UPDATED` - fired to notify that audio track lists has been updated
@@ -3145,6 +3151,12 @@ Full list of errors is described below:
   - data: { type : `NETWORK_ERROR`, details : `Hls.ErrorDetails.LEVEL_LOAD_TIMEOUT`, fatal : `false`, url : level URL, loader : URL loader }
 - `Hls.ErrorDetails.LEVEL_PARSING_ERROR` - raised when playlist parsing failed or found invalid content (applies to levels and audio and subtitle tracks)
   - data: { type : `NETWORK_ERROR`, details : `Hls.ErrorDetails.LEVEL_PARSING_ERROR`, fatal : `false`, url : level URL, error: Error, parent: PlaylistLevelType }
+- `Hls.ErrorDetails.ARCHIVE_LOAD_ERROR` - raised when a Playlist Archive fails to load. When main playback reaches it, it moves past it at the next playlist reload, and seeking into it tries again
+  - data: { type : `NETWORK_ERROR`, details : `Hls.ErrorDetails.ARCHIVE_LOAD_ERROR`, fatal : `false`, url : archive URL, archive : PlaylistArchive, response : { code: error code, text: error text }, parent: PlaylistLevelType }
+- `Hls.ErrorDetails.ARCHIVE_LOAD_TIMEOUT` - raised when a Playlist Archive fails to load because of a timeout
+  - data: { type : `NETWORK_ERROR`, details : `Hls.ErrorDetails.ARCHIVE_LOAD_TIMEOUT`, fatal : `false`, url : archive URL, archive : PlaylistArchive, parent: PlaylistLevelType }
+- `Hls.ErrorDetails.ARCHIVE_PARSING_ERROR` - raised when a Playlist Archive is invalid
+  - data: { type : `NETWORK_ERROR`, details : `Hls.ErrorDetails.ARCHIVE_PARSING_ERROR`, fatal : `false`, url : archive URL, archive : PlaylistArchive, error: Error, parent: PlaylistLevelType }
 - `Hls.ErrorDetails.AUDIO_TRACK_LOAD_ERROR` - raised when audio playlist loading fails because of a network error
   - data: { type : `NETWORK_ERROR`, details : `Hls.ErrorDetails.AUDIO_TRACK_LOAD_ERROR`, fatal : `false`, url : audio URL, response : { code: error code, text: error text }, loader : URL loader }
 - `Hls.ErrorDetails.AUDIO_TRACK_LOAD_TIMEOUT` - raised when audio playlist loading fails because of a timeout

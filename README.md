@@ -125,6 +125,7 @@ For details on the HLS format and these tags' meanings, see https://datatracker.
 - `#EXT-X-DATERANGE:<attribute-list>` Metadata
   - HLS EXT-X-DATERANGE Schema for Interstitials
 - `#EXT-X-DEFINE:<attribute-list>` Variable Import and Substitution (`NAME,VALUE,IMPORT,QUERYPARAM` attributes)
+- `#EXT-X-ARCHIVE:<attribute-list>` Playlist Archives, an early proposal (`URI,FIRST-MSN,DURATION,START-PROGRAM-DATE` attributes)
 - `#EXT-X-GAP` (Skips loading GAP segments and parts. Skips playback of unbuffered program containing only GAP content and no suitable alternates. See [#2940](https://github.com/video-dev/hls.js/issues/2940))
 
 Parsed but missing feature support:
