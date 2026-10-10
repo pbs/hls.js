@@ -715,12 +715,14 @@ export default class StreamController
     const currentTime = this.playhead;
     const start = levelDetails.start;
     const end = levelDetails.edge;
-    if (levelDetails.archives && currentTime < start) {
+    const archive = levelDetails.archiveAt(currentTime);
+    if (levelDetails.archives && (currentTime < start || archive?.error)) {
       if (media.readyState) {
+        const position = archive ? levelDetails.archiveEnd(archive) : start;
         this.log(
-          `Playback: ${currentTime} is before the start of Playlist Archives: ${start}, reset currentTime to start`,
+          `Playback: ${currentTime} is outside of available Playlist Archives, reset currentTime to ${position}`,
         );
-        media.currentTime = start;
+        media.currentTime = position;
       }
       return;
     }

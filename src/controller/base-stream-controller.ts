@@ -400,6 +400,10 @@ export default class BaseStreamController
   protected onMediaSeeking = () => {
     const { config, fragCurrent, media, mediaBuffer, state } = this;
     const currentTime: number = media ? media.currentTime : 0;
+    const archive = this.getLevelDetails()?.archiveAt(currentTime);
+    if (archive && !archive.loader) {
+      archive.error = null;
+    }
     const bufferInfo = BufferHelper.bufferInfo(
       mediaBuffer ? mediaBuffer : media,
       currentTime,
@@ -1648,23 +1652,76 @@ export default class BaseStreamController
     }
     const archive = levelDetails.archiveAt(pos);
     if (!archive) {
-      return levelDetails.fragments[0];
+      return this.getFragmentAtPosition(
+        Math.max(pos, levelDetails.fragmentStart),
+        levelDetails.fragmentEnd,
+        levelDetails,
+      );
     }
     const details = archive.details;
+    const end = levelDetails.archiveEnd(archive);
     if (details?.fragments.length) {
-      return this.getFragmentAtPosition(
+      const frag = this.getFragmentAtPosition(
         Math.max(pos, details.fragmentStart),
         details.fragmentEnd,
         details,
       );
+      if (frag) {
+        this.manageArchives(levelDetails, archive);
+        return frag;
+      }
+      // Continue with the successor once the end of a loaded archive is buffered
+      return this.getArchiveFragment(end, levelDetails);
     }
-    if (!archive.error && !details) {
-      this.loadArchive(archive, levelDetails);
+    if (archive.error || details) {
+      return this.getArchiveFragment(end, levelDetails);
     }
+    this.manageArchives(
+      levelDetails,
+      archive,
+      this.loadArchive(archive, levelDetails),
+    );
     return null;
   }
 
-  private loadArchive(archive: PlaylistArchive, levelDetails: LevelDetails) {
+  private manageArchives(
+    levelDetails: LevelDetails,
+    ...needed: PlaylistArchive[]
+  ) {
+    const { fragCurrent, levels, media } = this;
+    if (media) {
+      needed.push(levelDetails.archiveAt(media.currentTime) as PlaylistArchive);
+    }
+    if (fragCurrent && isMediaFragment(fragCurrent) && levels) {
+      const loading = levels[fragCurrent.level]?.details;
+      needed.push(loading?.archiveWithSN(fragCurrent.sn) as PlaylistArchive);
+    }
+    levels?.forEach((level) =>
+      level.details?.archives?.forEach((archive) => {
+        if (
+          (archive.details || archive.loader) &&
+          needed.indexOf(archive) === -1
+        ) {
+          this.log(
+            `Releasing Playlist Archive ${archive.firstSN} ${archive.url}`,
+          );
+          if (archive.loader) {
+            archive.loader.abort();
+            archive.loader = null;
+          }
+          if (archive.details?.fragments.length) {
+            archive.start = archive.details.fragmentStart;
+          }
+          archive.details = null;
+        }
+      }),
+    );
+  }
+
+  private loadArchive(
+    archive: PlaylistArchive,
+    levelDetails: LevelDetails,
+  ): PlaylistArchive {
     const archives = levelDetails.archives!;
     const newest = archives[archives.length - 1];
     // An archive that starts in the playlist, failed, or loaded empty has nothing to place
@@ -1688,6 +1745,7 @@ export default class BaseStreamController
         level: levelDetails.fragments[0].level,
       });
     }
+    return target;
   }
 
   protected onArchiveLoaded(
@@ -1745,6 +1803,7 @@ export default class BaseStreamController
     this.log(
       `Playlist Archive ${archive.firstSN} [${details.startSN}-${details.endSN}] placed at ${archive.start.toFixed(3)}-${levelDetails.archiveEnd(archive).toFixed(3)}`,
     );
+    this.manageArchives(levelDetails, archive);
     this.tickImmediate();
   }
 
