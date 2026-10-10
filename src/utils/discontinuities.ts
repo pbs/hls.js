@@ -1,4 +1,4 @@
-import { adjustSliding } from './level-helper';
+import { addArchiveSliding, adjustSliding } from './level-helper';
 import type { ILogger } from './logger';
 import type { Fragment } from '../loader/fragment';
 import type { LevelDetails } from '../loader/level-details';
@@ -45,6 +45,7 @@ export function adjustSlidingStart(sliding: number, details: LevelDetails) {
   if (details.fragmentHint) {
     adjustFragmentStart(details.fragmentHint, sliding);
   }
+  addArchiveSliding(details, sliding);
   details.alignedSliding = true;
 }
 

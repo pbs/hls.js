@@ -9,6 +9,7 @@ import { PlaylistLevelType } from '../types/loader';
 import type { ILogger } from './logger';
 import type { Fragment, MediaFragment, Part } from '../loader/fragment';
 import type { LevelDetails } from '../loader/level-details';
+import type { PlaylistArchive } from '../loader/playlist-archive';
 import type { Level } from '../types/level';
 
 type FragmentIntersection = (
@@ -313,6 +314,9 @@ export function mergeDetails(
   if (newFragments.length) {
     newDetails.totalduration = newDetails.edge - newFragments[0].start;
   }
+  if (__USE_PLAYLIST_ARCHIVES__) {
+    mergeArchives(oldDetails, newDetails, logger);
+  }
 
   newDetails.driftStartTime = oldDetails.driftStartTime;
   newDetails.driftStart = oldDetails.driftStart;
@@ -515,6 +519,96 @@ export function addSliding(details: LevelDetails, sliding: number) {
     if (details.fragmentHint) {
       details.fragmentHint.addStart(sliding);
     }
+    addArchiveSliding(details, sliding);
+  }
+}
+
+export function addArchiveSliding(details: LevelDetails, sliding: number) {
+  details.archives?.forEach((archive) => {
+    archive.start += sliding;
+    if (archive.details) {
+      addSliding(archive.details, sliding);
+    }
+  });
+}
+
+function mergeArchives(
+  oldDetails: LevelDetails,
+  newDetails: LevelDetails,
+  logger: ILogger,
+) {
+  const oldArchives = oldDetails.archives;
+  if (!newDetails.archives && newDetails.skippedSegments) {
+    newDetails.archives = oldArchives;
+  }
+  const archives = newDetails.archives;
+  if (!archives) {
+    return;
+  }
+  for (let i = 0; i < archives.length; i++) {
+    const archive = archives[i];
+    const url = stripQuery(archive.url);
+    const previous = oldArchives?.filter(
+      (oldArchive) => stripQuery(oldArchive.url) === url,
+    )[0];
+    if (previous && previous !== archive) {
+      if (archive.firstSN < previous.firstSN) {
+        logger.log(
+          `[level-helper] Playlist Archive FIRST-MSN decreased (${previous.firstSN}->${archive.firstSN}) ${url}`,
+        );
+      } else {
+        const removedDuration = previous.duration - archive.duration;
+        previous.attr = archive.attr;
+        previous.url = archive.url;
+        if (previous.details) {
+          trimArchive(previous);
+        } else if (removedDuration > 0) {
+          previous.start += removedDuration;
+        }
+        archives[i] = previous;
+      }
+    }
+    if (!Number.isFinite(archives[i].start)) {
+      const frag =
+        getFragmentWithSN(newDetails, archive.firstSN) ||
+        getFragmentWithSN(oldDetails, archive.firstSN);
+      if (frag) {
+        archives[i].start = frag.start;
+      }
+    }
+  }
+  // Keep fragments rolled out of the playlist in their loaded archive
+  for (let sn = oldDetails.startSN; sn < newDetails.startSN; sn++) {
+    const archiveDetails = newDetails.archiveWithSN(sn)?.details;
+    const frag = getFragmentWithSN(oldDetails, sn);
+    if (archiveDetails && frag && sn === archiveDetails.endSN + 1) {
+      archiveDetails.fragments.push(frag);
+      archiveDetails.endSN = sn;
+      archiveDetails.totalduration += frag.duration;
+      if (frag.encrypted) {
+        archiveDetails.encryptedFragments.push(frag);
+      }
+    }
+  }
+}
+
+export function trimArchive(archive: PlaylistArchive) {
+  const details = archive.details;
+  const firstSN = archive.firstSN;
+  if (details && firstSN > details.startSN) {
+    const fragments = details.fragments;
+    fragments.splice(0, firstSN - details.startSN);
+    details.startSN = firstSN;
+    details.encryptedFragments = details.encryptedFragments.filter(
+      (frag) => frag.sn === 'initSegment' || frag.sn >= firstSN,
+    );
+    if (fragments.length) {
+      details.startCC = fragments[0].cc;
+      details.totalduration = details.fragmentEnd - details.fragmentStart;
+      archive.start = details.fragmentStart;
+    } else {
+      details.totalduration = 0;
+    }
   }
 }
 
@@ -567,6 +661,11 @@ export function getFragmentWithSN(
   if (fragment?.sn === sn) {
     return fragment;
   }
+  const archiveDetails = details.archiveWithSN(sn)?.details;
+  const archiveFrag = archiveDetails && getFragmentWithSN(archiveDetails, sn);
+  if (archiveFrag) {
+    return archiveFrag;
+  }
   if (fragCurrent && sn < details.startSN && fragCurrent.sn === sn) {
     return fragCurrent as MediaFragment;
   }
@@ -602,12 +701,24 @@ export function findPart(
 
 export function reassignFragmentLevelIndexes(levels: Level[]) {
   levels.forEach((level, index) => {
-    level.details?.fragments.forEach((fragment) => {
-      fragment.level = index;
-      if (fragment.initSegment) {
-        fragment.initSegment.level = index;
-      }
-    });
+    const details = level.details;
+    if (details) {
+      assignLevelIndex(details, index);
+      details.archives?.forEach((archive) => {
+        if (archive.details) {
+          assignLevelIndex(archive.details, index);
+        }
+      });
+    }
+  });
+}
+
+function assignLevelIndex(details: LevelDetails, index: number) {
+  details.fragments.forEach((fragment) => {
+    fragment.level = index;
+    if (fragment.initSegment) {
+      fragment.initSegment.level = index;
+    }
   });
 }
 
@@ -621,6 +732,6 @@ function notEqualAfterStrippingQueries(
   return false;
 }
 
-function stripQuery(uri: string): string {
+export function stripQuery(uri: string): string {
   return uri.replace(/\?[^?]*$/, '');
 }

@@ -113,6 +113,50 @@ export class LevelDetails {
     return false;
   }
 
+  get start(): number {
+    const archives = this.archives;
+    let start = this.fragmentStart;
+    if (archives) {
+      for (let i = archives.length; i--; ) {
+        start = getArchiveStart(archives[i], start);
+      }
+    }
+    return Math.max(start, 0);
+  }
+
+  archiveAt(position: number): PlaylistArchive | null {
+    const archives = this.archives;
+    let successorStart = this.fragmentStart;
+    if (archives && position < successorStart) {
+      let successor: PlaylistArchive | null = null;
+      for (let i = archives.length; i--; ) {
+        const archive = archives[i];
+        const start = getArchiveStart(archive, successorStart);
+        if (position >= start) {
+          const details = archive.details;
+          return details?.fragments.length && position >= details.fragmentEnd
+            ? successor
+            : archive;
+        }
+        successor = archive;
+        successorStart = start;
+      }
+    }
+    return null;
+  }
+
+  archiveWithSN(sn: number): PlaylistArchive | null {
+    const archives = this.archives;
+    if (archives && sn < this.startSN) {
+      for (let i = archives.length; i--; ) {
+        if (sn >= archives[i].firstSN) {
+          return archives[i];
+        }
+      }
+    }
+    return null;
+  }
+
   get levelTargetDuration(): number {
     return (
       this.averagetargetduration ||
@@ -203,4 +247,16 @@ export class LevelDetails {
     }
     return false;
   }
+}
+
+function getArchiveStart(
+  archive: PlaylistArchive,
+  successorStart: number,
+): number {
+  if (archive.details?.fragments.length) {
+    return archive.details.fragmentStart;
+  }
+  return Number.isFinite(archive.start)
+    ? archive.start
+    : successorStart - archive.duration;
 }

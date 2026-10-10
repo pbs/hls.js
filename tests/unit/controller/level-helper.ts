@@ -11,13 +11,16 @@ import M3U8Parser from '../../../src/loader/m3u8-parser';
 import { Level } from '../../../src/types/level';
 import { PlaylistLevelType } from '../../../src/types/loader';
 import { AttrList } from '../../../src/utils/attr-list';
+import { adjustSlidingStart } from '../../../src/utils/discontinuities';
 import {
   addSliding,
   adjustSliding,
   computeReloadInterval,
+  getFragmentWithSN,
   mapFragmentIntersection,
   mapPartIntersection,
   mergeDetails,
+  reassignFragmentLevelIndexes,
 } from '../../../src/utils/level-helper';
 import { logger } from '../../../src/utils/logger';
 import type { MediaFragment } from '../../../src/loader/fragment';
@@ -2579,6 +2582,160 @@ video_5432.m4s?t=2`;
       startTime: 69.1,
       tagOrder: 0,
     });
+  });
+});
+
+describe('Playlist Archives', function () {
+  const segments = (first: number, last: number) => {
+    let text = '';
+    for (let sn = first; sn <= last; sn++) {
+      text += `#EXTINF:5,\n${sn}.m4s\n`;
+    }
+    return text;
+  };
+  const playlist = (
+    startSN: number,
+    endSN: number,
+    archives: string[],
+    skipped = 0,
+  ) =>
+    M3U8Parser.parseLevelPlaylist(
+      `#EXTM3U
+#EXT-X-TARGETDURATION:5
+#EXT-X-VERSION:9
+#EXT-X-MEDIA-SEQUENCE:${startSN}
+${archives.join('\n')}
+${skipped ? `#EXT-X-SKIP:SKIPPED-SEGMENTS=${skipped}\n` : ''}${segments(startSN + skipped, endSN)}`,
+      'http://example.com/live/v.m3u8',
+      0,
+      PlaylistLevelType.MAIN,
+      0,
+      null,
+    );
+  const tag = (firstSN: number, duration: number, uri: string) =>
+    `#EXT-X-ARCHIVE:FIRST-MSN=${firstSN},DURATION=${duration},URI="${uri}"`;
+  const loadArchive = (
+    details: LevelDetails,
+    index: number,
+    first: number,
+    last: number,
+    start: number,
+  ) => {
+    const archive = details.archives![index];
+    const archiveDetails = M3U8Parser.parseLevelPlaylist(
+      `#EXT-X-MEDIA-SEQUENCE:${first}
+#EXT-X-DISCONTINUITY-SEQUENCE:0
+${segments(first, last)}`,
+      archive.url,
+      0,
+      PlaylistLevelType.MAIN,
+      0,
+      null,
+      details,
+    );
+    addSliding(archiveDetails, start);
+    archive.details = archiveDetails;
+    archive.start = start;
+    return archive;
+  };
+
+  it('carries records across reloads by URI without query and trims them as FIRST-MSN rises', function () {
+    const oldDetails = playlist(13, 18, [
+      tag(1, 30, 'a.m3u8a?token=1'),
+      tag(7, 30, 'b.m3u8a?token=1'),
+    ]);
+    const [a, b] = oldDetails.archives!;
+    a.start = -60;
+    loadArchive(oldDetails, 1, 7, 12, -30);
+    const newDetails = playlist(14, 19, [
+      tag(3, 20, 'a.m3u8a?token=2'),
+      tag(8, 25, 'b.m3u8a?token=2'),
+    ]);
+    mergeDetails(oldDetails, newDetails, logger);
+    expect(newDetails.archives).to.deep.equal([a, b]);
+    expect(newDetails.archives![0]).to.equal(a);
+    expect(a.url).to.equal('http://example.com/live/a.m3u8a?token=2');
+    expect(a.firstSN).to.equal(3);
+    expect(a.start).to.equal(-50);
+    expect(b.details!.startSN).to.equal(8);
+    expect(b.details!.fragments[0].sn).to.equal(8);
+    expect(b.start).to.equal(-25);
+    expect(newDetails.fragments[0].start).to.equal(5);
+  });
+
+  it('drops records that are no longer listed or whose FIRST-MSN decreased', function () {
+    const oldDetails = playlist(13, 18, [
+      tag(1, 30, 'a.m3u8a'),
+      tag(7, 30, 'b.m3u8a'),
+    ]);
+    oldDetails.archives![1].start = -30;
+    const newDetails = playlist(13, 18, [tag(6, 35, 'b.m3u8a')]);
+    const fresh = newDetails.archives![0];
+    mergeDetails(oldDetails, newDetails, logger);
+    expect(newDetails.archives).to.have.lengthOf(1);
+    expect(newDetails.archives![0]).to.equal(fresh);
+  });
+
+  it('places new records whose FIRST-MSN is in the playlist without loading them', function () {
+    const oldDetails = playlist(10, 18, [tag(1, 45, 'a.m3u8a')]);
+    const newDetails = playlist(11, 19, [
+      tag(1, 45, 'a.m3u8a'),
+      tag(10, 15, 'b.m3u8a'),
+    ]);
+    mergeDetails(oldDetails, newDetails, logger);
+    expect(newDetails.archives![1].start).to.equal(0);
+    expect(newDetails.archives![0].start).to.be.NaN;
+    expect(newDetails.start).to.equal(0);
+  });
+
+  it('hands fragments rolled out of the playlist to the loaded archive that holds them', function () {
+    const oldDetails = playlist(10, 18, [tag(7, 30, 'b.m3u8a')]);
+    const b = loadArchive(oldDetails, 0, 7, 9, -15);
+    const rolledOff = oldDetails.fragments.slice(0, 2);
+    const newDetails = playlist(12, 20, [tag(7, 30, 'b.m3u8a')]);
+    mergeDetails(oldDetails, newDetails, logger);
+    expect(b.details!.fragments.map((frag) => frag.sn)).to.deep.equal([
+      7, 8, 9, 10, 11,
+    ]);
+    expect(b.details!.fragments[3]).to.equal(rolledOff[0]);
+    expect(b.details!.fragments[4]).to.equal(rolledOff[1]);
+    expect(b.details!.endSN).to.equal(11);
+    expect(b.details!.fragmentEnd).to.equal(newDetails.fragmentStart);
+    expect(getFragmentWithSN(newDetails, 11)).to.equal(rolledOff[1]);
+    expect(getFragmentWithSN(newDetails, 8)).to.equal(b.details!.fragments[1]);
+  });
+
+  it('keeps records when a delta update has no archive tags', function () {
+    const oldDetails = playlist(13, 18, [tag(1, 60, 'a.m3u8a')]);
+    const archives = oldDetails.archives;
+    const newDetails = playlist(14, 19, [], 4);
+    mergeDetails(oldDetails, newDetails, logger);
+    expect(newDetails.archives).to.equal(archives);
+  });
+
+  it('moves placed and loaded archives with the playlist', function () {
+    const details = playlist(13, 18, [
+      tag(1, 30, 'a.m3u8a'),
+      tag(7, 30, 'b.m3u8a'),
+    ]);
+    const [a, b] = details.archives!;
+    loadArchive(details, 1, 7, 12, -30);
+    addSliding(details, 100);
+    expect(a.start).to.be.NaN;
+    expect(b.start).to.equal(70);
+    expect(b.details!.fragmentStart).to.equal(70);
+    expect(details.start).to.equal(40);
+    adjustSlidingStart(-40, details);
+    expect(b.details!.fragmentStart).to.equal(30);
+    expect(details.start).to.equal(0);
+  });
+
+  it('reassigns level indexes of archive fragments', function () {
+    const details = playlist(13, 18, [tag(7, 30, 'b.m3u8a')]);
+    const b = loadArchive(details, 0, 7, 12, -30);
+    const level: Partial<Level> = { details };
+    reassignFragmentLevelIndexes([level, level] as Level[]);
+    expect(b.details!.fragments[0].level).to.equal(1);
   });
 });
 

@@ -3610,7 +3610,11 @@ export class LevelDetails {
     // (undocumented)
     appliedTimelineOffset?: number;
     // (undocumented)
+    archiveAt(position: number): PlaylistArchive | null;
+    // (undocumented)
     archives: PlaylistArchive[] | null;
+    // (undocumented)
+    archiveWithSN(sn: number): PlaylistArchive | null;
     // (undocumented)
     averagetargetduration?: number;
     // (undocumented)
@@ -3701,6 +3705,8 @@ export class LevelDetails {
     requestScheduled: number;
     // (undocumented)
     skippedSegments: number;
+    // (undocumented)
+    get start(): number;
     // (undocumented)
     startCC: number;
     // (undocumented)
