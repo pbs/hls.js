@@ -715,10 +715,18 @@ export default class StreamController
     const currentTime = this.playhead;
     const start = levelDetails.start;
     const end = levelDetails.edge;
-    const archive = levelDetails.archiveAt(currentTime);
-    if (levelDetails.archives && (currentTime < start || archive?.error)) {
+    const bufferEnd = BufferHelper.bufferInfo(media, currentTime, 0).end;
+    const archive = levelDetails.archiveAt(
+      bufferEnd + config.maxFragLookUpTolerance,
+    );
+    if (
+      levelDetails.archives &&
+      (currentTime < start || (archive?.error && bufferEnd - currentTime < 1))
+    ) {
       if (media.readyState) {
-        const position = archive ? levelDetails.archiveEnd(archive) : start;
+        const position = archive
+          ? levelDetails.archiveEnd(archive) + config.maxFragLookUpTolerance
+          : start;
         this.log(
           `Playback: ${currentTime} is outside of available Playlist Archives, reset currentTime to ${position}`,
         );

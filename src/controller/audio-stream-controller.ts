@@ -375,7 +375,7 @@ class AudioStreamController
     const maxBufLen = hls.maxBufferLength;
 
     const fragments = trackDetails.fragments;
-    const start = fragments[0].start;
+    const start = trackDetails.start;
     const loadPosition = this.getLoadPosition();
     const targetBufferTime =
       this.flushing ||

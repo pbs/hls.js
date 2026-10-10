@@ -1673,7 +1673,10 @@ export default class BaseStreamController
       // Continue with the successor once the end of a loaded archive is buffered
       return this.getArchiveFragment(end, levelDetails);
     }
-    if (archive.error || details) {
+    if (archive.error) {
+      return null;
+    }
+    if (details) {
       return this.getArchiveFragment(end, levelDetails);
     }
     this.manageArchives(
