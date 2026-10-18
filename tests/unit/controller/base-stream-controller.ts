@@ -1616,5 +1616,24 @@ ${segments(first, last)}`,
       (baseStreamController as any).loadArchive(b, details);
       expect(archivesLoading()).to.deep.equal([b]);
     });
+
+    it('plays out media buffered behind the start and then resets to the start', function () {
+      const details = playlist(30, 40, [[20, 50, 'c.m3u8a']], 150);
+      const [c] = details.archives!;
+      archiveLoaded(details, c, 20, 29);
+      expect(details.start).to.equal(100);
+      Object.defineProperty(baseStreamController, 'playhead', {
+        get: () => media.currentTime,
+      });
+      media.currentTime = 90;
+      media.buffered = new TimeRangesMock([85, 120]);
+      media.readyState = 4;
+      (baseStreamController as any).synchronizeToLiveEdge(details);
+      expect(media.currentTime).to.equal(90);
+
+      media.readyState = 2;
+      (baseStreamController as any).synchronizeToLiveEdge(details);
+      expect(media.currentTime).to.equal(100);
+    });
   });
 });

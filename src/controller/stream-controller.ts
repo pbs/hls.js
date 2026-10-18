@@ -722,14 +722,14 @@ export default class StreamController
       const archive = levelDetails.archiveAt(
         bufferEnd + config.maxFragLookUpTolerance,
       );
-      if (
-        currentTime < start ||
-        (archive?.error && bufferEnd - currentTime < 1)
-      ) {
-        if (media.readyState) {
-          const position = archive
-            ? levelDetails.archiveEnd(archive) + config.maxFragLookUpTolerance
-            : start;
+      const behindStart = currentTime < start;
+      if (behindStart || (archive?.error && bufferEnd - currentTime < 1)) {
+        // Play out media buffered behind the start, as with sliding playlists
+        if (media.readyState && (!behindStart || media.readyState < 4)) {
+          const position =
+            archive && !behindStart
+              ? levelDetails.archiveEnd(archive) + config.maxFragLookUpTolerance
+              : start;
           this.log(
             `Playback: ${currentTime} is outside of available Playlist Archives, reset currentTime to ${position}`,
           );
